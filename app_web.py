@@ -809,41 +809,31 @@ def main():
         st.subheader("🎯 Quantidade")
         qtd_jogos = st.number_input("Jogos a gerar:", 1, 50, 6)
 
+        # Lista de todos os numeros disponiveis
+        todos_numeros = [f"{i:02d}" for i in range(1, 61)]
+
         st.subheader("🔢 Numeros Fixos")
-        numeros_fixos_str = st.text_input("Numeros fixos (ex: 7,13,25):", "",
-                                          help="Numeros que DEVEM aparecer em todos os jogos")
+        numeros_fixos_sel = st.multiselect(
+            "Selecione numeros fixos (max 6):",
+            options=todos_numeros,
+            default=[],
+            help="Numeros que DEVEM aparecer em todos os jogos",
+            max_selections=6
+        )
 
         st.subheader("🚫 Numeros Removidos")
-        numeros_removidos_str = st.text_input("Numeros removidos (ex: 1,2,3):", "",
-                                               help="Numeros que NAO devem aparecer")
+        # Filtrar numeros ja selecionados como fixos
+        numeros_disponiveis = [n for n in todos_numeros if n not in numeros_fixos_sel]
+        numeros_removidos_sel = st.multiselect(
+            "Selecione numeros a remover:",
+            options=numeros_disponiveis,
+            default=[],
+            help="Numeros que NAO devem aparecer"
+        )
 
-    # Processar numeros fixos e removidos
-    numeros_fixos = set()
-    numeros_removidos = set()
-
-    if numeros_fixos_str:
-        try:
-            numeros_fixos = {int(n.strip()) for n in numeros_fixos_str.split(',') if n.strip()}
-            numeros_fixos = {n for n in numeros_fixos if DEZENA_MIN <= n <= DEZENA_MAX}
-        except ValueError:
-            st.sidebar.error("Formato invalido para numeros fixos")
-
-    if numeros_removidos_str:
-        try:
-            numeros_removidos = {int(n.strip()) for n in numeros_removidos_str.split(',') if n.strip()}
-            numeros_removidos = {n for n in numeros_removidos if DEZENA_MIN <= n <= DEZENA_MAX}
-        except ValueError:
-            st.sidebar.error("Formato invalido para numeros removidos")
-
-    # Validar conflitos
-    conflitos = numeros_fixos & numeros_removidos
-    if conflitos:
-        st.sidebar.error(f"Conflito! Numeros em ambas as listas: {conflitos}")
-        numeros_removidos -= conflitos
-
-    if len(numeros_fixos) > 6:
-        st.sidebar.error("Maximo de 6 numeros fixos!")
-        numeros_fixos = set(list(numeros_fixos)[:6])
+    # Converter selecoes para sets de inteiros
+    numeros_fixos = {int(n) for n in numeros_fixos_sel}
+    numeros_removidos = {int(n) for n in numeros_removidos_sel}
 
     # Tabs principais
     tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
@@ -1049,10 +1039,12 @@ def main():
         with col1:
             st.markdown("### Configurar Fechamento")
 
-            dezenas_fechamento = st.text_input(
-                "Digite as dezenas para o fechamento (7 a 15 numeros):",
-                placeholder="Ex: 5, 10, 15, 20, 25, 30, 35",
-                help="Separe os numeros por virgula"
+            todos_nums = [f"{i:02d}" for i in range(1, 61)]
+            dezenas_fechamento_sel = st.multiselect(
+                "Selecione as dezenas (7 a 15 numeros):",
+                options=todos_nums,
+                default=[],
+                help="Selecione entre 7 e 15 numeros para o fechamento"
             )
 
             garantia = st.selectbox(
@@ -1074,43 +1066,37 @@ def main():
             | 12      | 27             | 132           | 924          |
             """)
 
-        if dezenas_fechamento:
-            try:
-                dezenas_list = [int(n.strip()) for n in dezenas_fechamento.split(',') if n.strip()]
-                dezenas_list = [n for n in dezenas_list if DEZENA_MIN <= n <= DEZENA_MAX]
-                dezenas_list = list(set(dezenas_list))  # Remover duplicatas
+        if dezenas_fechamento_sel:
+            dezenas_list = [int(n) for n in dezenas_fechamento_sel]
 
-                if len(dezenas_list) < 7:
-                    st.warning("Minimo de 7 numeros para fechamento!")
-                elif len(dezenas_list) > 15:
-                    st.warning("Maximo de 15 numeros para fechamento (para evitar muitos jogos)!")
-                else:
-                    st.info(f"📊 {len(dezenas_list)} numeros selecionados: {', '.join(f'{d:02d}' for d in sorted(dezenas_list))}")
+            if len(dezenas_list) < 7:
+                st.warning("Minimo de 7 numeros para fechamento!")
+            elif len(dezenas_list) > 15:
+                st.warning("Maximo de 15 numeros para fechamento (para evitar muitos jogos)!")
+            else:
+                st.info(f"📊 {len(dezenas_list)} numeros selecionados: {', '.join(f'{d:02d}' for d in sorted(dezenas_list))}")
 
-                    if st.button("🔒 Gerar Fechamento", type="primary"):
-                        with st.spinner("Gerando fechamento..."):
-                            jogos_fechamento = GeradorFechamento.gerar_fechamento(dezenas_list, garantia)
+                if st.button("🔒 Gerar Fechamento", type="primary"):
+                    with st.spinner("Gerando fechamento..."):
+                        jogos_fechamento = GeradorFechamento.gerar_fechamento(dezenas_list, garantia)
 
-                        st.success(f"✅ Fechamento gerado com {len(jogos_fechamento)} jogos!")
-                        st.caption(f"Garantia: {'Quadra' if garantia == 4 else 'Quina' if garantia == 5 else 'Sena'}")
+                    st.success(f"✅ Fechamento gerado com {len(jogos_fechamento)} jogos!")
+                    st.caption(f"Garantia: {'Quadra' if garantia == 4 else 'Quina' if garantia == 5 else 'Sena'}")
 
-                        # Exportar
-                        col_e1, col_e2 = st.columns(2)
-                        with col_e1:
-                            excel_fech = gerar_excel_jogos(jogos_fechamento, [f'Fechamento {garantia}'])
-                            st.download_button(
-                                "📥 Baixar Fechamento (Excel)",
-                                data=excel_fech,
-                                file_name=f"fechamento_{len(dezenas_list)}dez_{garantia}garantia.xlsx"
-                            )
+                    # Exportar
+                    col_e1, col_e2 = st.columns(2)
+                    with col_e1:
+                        excel_fech = gerar_excel_jogos(jogos_fechamento, [f'Fechamento {garantia}'])
+                        st.download_button(
+                            "📥 Baixar Fechamento (Excel)",
+                            data=excel_fech,
+                            file_name=f"fechamento_{len(dezenas_list)}dez_{garantia}garantia.xlsx"
+                        )
 
-                        # Exibir jogos
-                        for i, jogo in enumerate(jogos_fechamento, 1):
-                            numeros_html = "".join([f'<span class="numero-grande">{d:02d}</span>' for d in jogo])
-                            st.markdown(f"**Jogo {i:02d}:** {numeros_html}", unsafe_allow_html=True)
-
-            except ValueError:
-                st.error("Formato invalido! Use numeros separados por virgula.")
+                    # Exibir jogos
+                    for i, jogo in enumerate(jogos_fechamento, 1):
+                        numeros_html = "".join([f'<span class="numero-grande">{d:02d}</span>' for d in jogo])
+                        st.markdown(f"**Jogo {i:02d}:** {numeros_html}", unsafe_allow_html=True)
 
     with tab4:
         st.subheader("🎯 Simulador de Jogos")
@@ -1123,61 +1109,60 @@ def main():
         col1, col2 = st.columns([1, 1])
 
         with col1:
-            dezenas_simular = st.text_input(
-                "Digite 6 numeros para simular:",
-                placeholder="Ex: 5, 10, 15, 20, 25, 30"
+            todos_nums_sim = [f"{i:02d}" for i in range(1, 61)]
+            dezenas_simular_sel = st.multiselect(
+                "Selecione 6 numeros para simular:",
+                options=todos_nums_sim,
+                default=[],
+                help="Selecione exatamente 6 numeros",
+                max_selections=6
             )
 
             qtd_concursos = st.slider("Quantidade de concursos para simular:", 50, 500, 100)
 
-        if dezenas_simular:
-            try:
-                dezenas_sim = [int(n.strip()) for n in dezenas_simular.split(',') if n.strip()]
-                dezenas_sim = sorted([n for n in dezenas_sim if DEZENA_MIN <= n <= DEZENA_MAX])[:6]
+        if dezenas_simular_sel:
+            dezenas_sim = sorted([int(n) for n in dezenas_simular_sel])
 
-                if len(dezenas_sim) != 6:
-                    st.warning("Digite exatamente 6 numeros validos!")
-                else:
-                    st.info(f"Simulando: {' - '.join(f'{d:02d}' for d in dezenas_sim)}")
+            if len(dezenas_sim) != 6:
+                st.warning(f"Selecione exatamente 6 numeros! (Selecionados: {len(dezenas_sim)})")
+            else:
+                st.info(f"Simulando: {' - '.join(f'{d:02d}' for d in dezenas_sim)}")
 
-                    if st.button("🎯 Simular", type="primary"):
-                        resultados = analisador_completo.simular_jogo(dezenas_sim, qtd_concursos)
+                if st.button("🎯 Simular", type="primary"):
+                    resultados = analisador_completo.simular_jogo(dezenas_sim, qtd_concursos)
 
-                        with col2:
-                            st.markdown("### Resultados da Simulacao")
+                    with col2:
+                        st.markdown("### Resultados da Simulacao")
 
-                            # Metricas
-                            col_m1, col_m2, col_m3 = st.columns(3)
-                            col_m1.metric("🏆 Senas", resultados['acertos'][6], delta=None)
-                            col_m2.metric("⭐ Quinas", resultados['acertos'][5], delta=None)
-                            col_m3.metric("🎯 Quadras", resultados['acertos'][4], delta=None)
+                        # Metricas
+                        col_m1, col_m2, col_m3 = st.columns(3)
+                        col_m1.metric("🏆 Senas", resultados['acertos'][6], delta=None)
+                        col_m2.metric("⭐ Quinas", resultados['acertos'][5], delta=None)
+                        col_m3.metric("🎯 Quadras", resultados['acertos'][4], delta=None)
 
-                            # Distribuicao completa
-                            st.markdown("#### Distribuicao de Acertos")
-                            df_acertos = pd.DataFrame([
-                                {'Acertos': f'{i} acertos', 'Quantidade': resultados['acertos'][i]}
-                                for i in range(7)
-                            ])
-                            if df_acertos['Quantidade'].sum() > 0:
-                                st.bar_chart(df_acertos.set_index('Acertos'))
-                            else:
-                                st.info("Nenhum dado para exibir.")
+                        # Distribuicao completa
+                        st.markdown("#### Distribuicao de Acertos")
+                        df_acertos = pd.DataFrame([
+                            {'Acertos': f'{i} acertos', 'Quantidade': resultados['acertos'][i]}
+                            for i in range(7)
+                        ])
+                        if df_acertos['Quantidade'].sum() > 0:
+                            st.bar_chart(df_acertos.set_index('Acertos'))
+                        else:
+                            st.info("Nenhum dado para exibir.")
 
-                            # Detalhes de premios
-                            if resultados['detalhes']:
-                                st.markdown("#### Premiacoes (4+ acertos)")
-                                for det in resultados['detalhes']:
-                                    classe = 'premio-sena' if det['acertos'] == 6 else 'premio-quina' if det['acertos'] == 5 else 'premio-quadra'
-                                    st.markdown(
-                                        f"<span class='{classe}'>Concurso {det['concurso']}</span> ({det['data']}): "
-                                        f"**{det['acertos']} acertos** - Sorteados: {det['dezenas_sorteadas']}",
-                                        unsafe_allow_html=True
-                                    )
-                            else:
-                                st.info("Nenhuma premiacao (4+) nos concursos simulados.")
-
-            except ValueError:
-                st.error("Formato invalido! Use numeros separados por virgula.")
+                        # Detalhes de premios
+                        if resultados['detalhes']:
+                            st.markdown("#### Premiacoes (4+ acertos)")
+                            for det in resultados['detalhes']:
+                                classe = 'premio-sena' if det['acertos'] == 6 else 'premio-quina' if det['acertos'] == 5 else 'premio-quadra'
+                                st.markdown(
+                                    f"<span class='{classe}'>Concurso {det['concurso']}</span> ({det['data']}): "
+                                    f"**{det['acertos']} acertos** - Sorteados: {det['dezenas_sorteadas']}",
+                                    unsafe_allow_html=True
+                                )
+                        else:
+                            st.info("Nenhuma premiacao (4+) nos concursos simulados.")
 
     with tab5:
         st.subheader("💾 Meus Jogos Salvos")
@@ -1248,36 +1233,42 @@ def main():
 
         with col1:
             st.markdown("### Conferir Jogo Manual")
-            jogo_conferir = st.text_input("Digite os 6 numeros:", placeholder="Ex: 5, 10, 15, 20, 25, 30")
+            todos_nums_conf = [f"{i:02d}" for i in range(1, 61)]
+            jogo_conferir_sel = st.multiselect(
+                "Selecione 6 numeros para conferir:",
+                options=todos_nums_conf,
+                default=[],
+                help="Selecione exatamente 6 numeros",
+                max_selections=6,
+                key="conferir_manual"
+            )
 
-            if jogo_conferir:
-                try:
-                    dezenas_conf = [int(n.strip()) for n in jogo_conferir.split(',') if n.strip()]
-                    dezenas_conf = sorted([n for n in dezenas_conf if DEZENA_MIN <= n <= DEZENA_MAX])[:6]
+            if jogo_conferir_sel:
+                dezenas_conf = sorted([int(n) for n in jogo_conferir_sel])
 
-                    if len(dezenas_conf) == 6:
-                        acertos = analisador_completo.conferir_jogo(dezenas_conf, concurso_conf)
-                        acertados = set(dezenas_conf) & concurso_conf.dezenas_set
+                if len(dezenas_conf) == 6:
+                    acertos = analisador_completo.conferir_jogo(dezenas_conf, concurso_conf)
+                    acertados = set(dezenas_conf) & concurso_conf.dezenas_set
 
-                        # Exibir com destaque nos acertos
-                        numeros_html = ""
-                        for d in dezenas_conf:
-                            classe = "numero-grande numero-acerto" if d in acertados else "numero-grande"
-                            numeros_html += f'<span class="{classe}">{d:02d}</span>'
+                    # Exibir com destaque nos acertos
+                    numeros_html = ""
+                    for d in dezenas_conf:
+                        classe = "numero-grande numero-acerto" if d in acertados else "numero-grande"
+                        numeros_html += f'<span class="{classe}">{d:02d}</span>'
 
-                        st.markdown(numeros_html, unsafe_allow_html=True)
+                    st.markdown(numeros_html, unsafe_allow_html=True)
 
-                        if acertos == 6:
-                            st.balloons()
-                            st.success(f"🏆 SENA! {acertos} acertos!")
-                        elif acertos == 5:
-                            st.success(f"⭐ QUINA! {acertos} acertos!")
-                        elif acertos == 4:
-                            st.success(f"🎯 QUADRA! {acertos} acertos!")
-                        else:
-                            st.info(f"📊 {acertos} acertos")
-                except ValueError:
-                    st.error("Formato invalido!")
+                    if acertos == 6:
+                        st.balloons()
+                        st.success(f"🏆 SENA! {acertos} acertos!")
+                    elif acertos == 5:
+                        st.success(f"⭐ QUINA! {acertos} acertos!")
+                    elif acertos == 4:
+                        st.success(f"🎯 QUADRA! {acertos} acertos!")
+                    else:
+                        st.info(f"📊 {acertos} acertos")
+                else:
+                    st.warning(f"Selecione exatamente 6 numeros! (Selecionados: {len(dezenas_conf)})")
 
         with col2:
             st.markdown("### Conferir Jogos Salvos")
