@@ -773,19 +773,20 @@ def main():
     concursos = carregar_resultados_excel(str(caminho))
     analisador_completo = AnalisadorMegaSena(concursos)
 
-    # Verificar atualizacoes automaticamente
-    ha_atualizacao, ultimo_caixa = verificar_atualizacao_automatica()
-    if ha_atualizacao:
-        col_aviso1, col_aviso2 = st.columns([3, 1])
-        with col_aviso1:
-            st.warning(f"🔔 **Novos resultados disponiveis!** Ultimo concurso na Caixa: {ultimo_caixa} | Seu ultimo: {concursos[-1].numero}")
-        with col_aviso2:
-            if st.button("🔄 Atualizar", key="btn_atualizar_header"):
-                with st.spinner("Atualizando..."):
-                    sucesso, msg, qtd = atualizar_arquivo_resultados()
-                if sucesso and qtd > 0:
-                    st.cache_data.clear()
-                    st.rerun()
+    # Atualizar automaticamente se houver novos concursos
+    if 'atualizacao_verificada' not in st.session_state:
+        st.session_state.atualizacao_verificada = False
+
+    if not st.session_state.atualizacao_verificada:
+        ha_atualizacao, ultimo_caixa = verificar_atualizacao_automatica()
+        if ha_atualizacao:
+            with st.spinner("🔄 Atualizando resultados..."):
+                sucesso, msg, qtd = atualizar_arquivo_resultados()
+            if sucesso and qtd > 0:
+                st.cache_data.clear()
+                st.session_state.atualizacao_verificada = True
+                st.rerun()
+        st.session_state.atualizacao_verificada = True
 
     # Sidebar
     with st.sidebar:
@@ -836,14 +837,13 @@ def main():
     numeros_removidos = {int(n) for n in numeros_removidos_sel}
 
     # Tabs principais
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "🎰 Gerar Jogos",
         "📊 Estatisticas",
         "🔒 Fechamento",
         "🎯 Simulador",
         "💾 Meus Jogos",
-        "✅ Conferir",
-        "⚙️ Config"
+        "✅ Conferir"
     ])
 
     with tab1:
@@ -1302,108 +1302,9 @@ def main():
             else:
                 st.info("Nenhum jogo salvo para conferir.")
 
-    with tab7:
-        st.subheader("⚙️ Configuracoes")
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            st.markdown("### 🔄 Atualizar Resultados")
-            st.markdown("Baixe os resultados mais recentes da Mega-Sena diretamente da Caixa.")
-
-            # Verificar se ha atualizacoes disponiveis
-            ha_novos, ultimo_disponivel = verificar_atualizacao_automatica()
-
-            if ha_novos:
-                st.warning(f"⚠️ Novos concursos disponiveis! Ultimo na Caixa: **{ultimo_disponivel}**")
-
-            col_btn1, col_btn2 = st.columns(2)
-
-            with col_btn1:
-                if st.button("🔄 Atualizar Agora", type="primary", use_container_width=True):
-                    with st.spinner("Baixando resultados da Caixa..."):
-                        sucesso, mensagem, qtd = atualizar_arquivo_resultados()
-
-                    if sucesso:
-                        if qtd > 0:
-                            st.success(f"✅ {mensagem}")
-                            st.balloons()
-                            # Limpar cache para recarregar dados
-                            st.cache_data.clear()
-                            st.info("🔄 Recarregue a pagina para ver os novos dados.")
-                        else:
-                            st.info(f"ℹ️ {mensagem}")
-                    else:
-                        st.error(f"❌ {mensagem}")
-
-            with col_btn2:
-                if st.button("🔍 Verificar Ultimo", use_container_width=True):
-                    with st.spinner("Consultando API da Caixa..."):
-                        dados = buscar_concurso_caixa()
-
-                    if dados:
-                        st.success(f"✅ Ultimo concurso: **{dados.get('numero')}**")
-                        dezenas = dados.get('listaDezenas', dados.get('dezenas', []))
-                        st.write(f"**Data:** {dados.get('dataApuracao', 'N/A')}")
-                        st.write(f"**Dezenas:** {' - '.join(str(d) for d in dezenas)}")
-                    else:
-                        st.error("Nao foi possivel consultar a API.")
-
-            st.markdown("---")
-
-            # Configuracao de atualizacao automatica
-            st.markdown("### ⏰ Atualizacao Automatica")
-
-            auto_update = st.checkbox(
-                "Verificar atualizacoes ao abrir o app",
-                value=True,
-                help="Verifica automaticamente se ha novos concursos"
-            )
-
-            if auto_update:
-                st.caption("O sistema verificara novos concursos sempre que voce abrir o aplicativo.")
-
-            st.markdown("---")
-
-            st.markdown("### 📁 Arquivo de Dados")
-            st.write(f"**Arquivo atual:** resultados.xlsx")
-            st.write(f"**Total de concursos:** {len(concursos)}")
-            if concursos:
-                st.write(f"**Primeiro concurso:** {concursos[0].numero} ({concursos[0].data})")
-                st.write(f"**Ultimo concurso local:** {concursos[-1].numero} ({concursos[-1].data})")
-                if ha_novos:
-                    st.write(f"**Ultimo na Caixa:** {ultimo_disponivel}")
-                    st.write(f"**Concursos faltando:** {ultimo_disponivel - concursos[-1].numero}")
-
-        with col2:
-            st.markdown("### ℹ️ Sobre o Sistema")
-
-            st.markdown("""
-            **Funcionalidades:**
-            - ✅ Geracao com multiplos algoritmos
-            - ✅ Numeros fixos e removidos
-            - ✅ Fechamento/Desdobramento
-            - ✅ Simulador de jogos
-            - ✅ Salvar/Carregar jogos
-            - ✅ Conferencia automatica
-            - ✅ Exportar Excel/CSV
-            - ✅ Atualizacao de resultados
-
-            **Algoritmos:**
-            | Algoritmo | Descricao |
-            |-----------|-----------|
-            | Frequencia | Numeros mais sorteados |
-            | Markov | Seguidores do ultimo sorteio |
-            | Co-ocorrencia | Pares frequentes |
-            | Atrasados | Numeros que nao saem ha tempo |
-            | Balanceado | Equilibrio par/impar e faixas |
-            """)
-
-            st.markdown("---")
-            st.warning("⚠️ **Loteria e um jogo de azar.** Nenhum algoritmo pode prever os numeros sorteados.")
-
-        st.markdown("---")
-        st.caption(f"Base de dados: {len(concursos)} concursos | Periodo: {concursos[0].data} a {concursos[-1].data}")
+    # Rodape com informacoes
+    st.markdown("---")
+    st.caption(f"📊 Base: {len(concursos)} concursos | Ultimo: {concursos[-1].numero} ({concursos[-1].data}) | Atualizacao automatica ativada")
 
 
 if __name__ == "__main__":
