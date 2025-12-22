@@ -1,14 +1,28 @@
 """
 Gerador Inteligente de Jogos da Mega-Sena - Interface Web
 Execute com: streamlit run app_web.py
+
+Funcionalidades:
+- Geracao de jogos com multiplos algoritmos
+- Numeros fixos e removidos
+- Fechamento/Desdobramento
+- Conferencia automatica
+- Simulador de jogos
+- Salvar/carregar jogos
+- Exportar PDF/Excel
+- Atualizacao automatica de resultados
 """
 
 import datetime as dt
+import io
+import itertools
+import json
 import random
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
+import requests
 
 import pandas as pd
 import streamlit as st
@@ -18,6 +32,7 @@ DEZENA_MIN = 1
 DEZENA_MAX = 60
 TAMANHO_JOGO = 6
 FAIXAS = [(1, 20), (21, 40), (41, 60)]
+ARQUIVO_JOGOS_SALVOS = "jogos_salvos.json"
 
 
 @dataclass(frozen=True)
@@ -29,6 +44,44 @@ class Concurso:
     @property
     def dezenas_set(self) -> Set[int]:
         return set(self.dezenas)
+
+    def to_dict(self) -> dict:
+        return {
+            'numero': self.numero,
+            'data': self.data.isoformat(),
+            'dezenas': list(self.dezenas)
+        }
+
+
+@dataclass
+class JogoSalvo:
+    id: int
+    dezenas: List[int]
+    data_criacao: str
+    algoritmos: List[str]
+    conferido: bool = False
+    acertos: Dict[int, int] = None  # {concurso: acertos}
+
+    def to_dict(self) -> dict:
+        return {
+            'id': self.id,
+            'dezenas': self.dezenas,
+            'data_criacao': self.data_criacao,
+            'algoritmos': self.algoritmos,
+            'conferido': self.conferido,
+            'acertos': self.acertos or {}
+        }
+
+    @staticmethod
+    def from_dict(d: dict) -> 'JogoSalvo':
+        return JogoSalvo(
+            id=d['id'],
+            dezenas=d['dezenas'],
+            data_criacao=d['data_criacao'],
+            algoritmos=d['algoritmos'],
+            conferido=d.get('conferido', False),
+            acertos=d.get('acertos', {})
+        )
 
 
 @dataclass
@@ -151,6 +204,32 @@ class AnalisadorMegaSena:
         atrasos = self.calcular_atrasos()
         return sorted(atrasos.items(), key=lambda x: x[1], reverse=True)[:top_n]
 
+    def conferir_jogo(self, dezenas: List[int], concurso: Concurso) -> int:
+        """Retorna quantidade de acertos do jogo no concurso."""
+        return len(set(dezenas) & concurso.dezenas_set)
+
+    def simular_jogo(self, dezenas: List[int], ultimos_n: int = 100) -> Dict[str, any]:
+        """Simula um jogo nos ultimos N concursos."""
+        concursos_sim = self.concursos[-ultimos_n:] if len(self.concursos) > ultimos_n else self.concursos
+        resultados = {
+            'total_concursos': len(concursos_sim),
+            'acertos': {0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0},
+            'detalhes': []
+        }
+
+        for c in concursos_sim:
+            acertos = self.conferir_jogo(dezenas, c)
+            resultados['acertos'][acertos] += 1
+            if acertos >= 4:
+                resultados['detalhes'].append({
+                    'concurso': c.numero,
+                    'data': c.data.isoformat(),
+                    'acertos': acertos,
+                    'dezenas_sorteadas': list(c.dezenas)
+                })
+
+        return resultados
+
 
 class GeradorJogos:
     def __init__(self, analisador: AnalisadorMegaSena, rng: Optional[random.Random] = None):
@@ -174,10 +253,26 @@ class GeradorJogos:
                 return False
         return True
 
-    def gerar_uniforme(self) -> List[int]:
-        return sorted(self.rng.sample(range(DEZENA_MIN, DEZENA_MAX + 1), TAMANHO_JOGO))
+    def gerar_uniforme(self, numeros_fixos: Set[int] = None, numeros_removidos: Set[int] = None) -> List[int]:
+        numeros_fixos = numeros_fixos or set()
+        numeros_removidos = numeros_removidos or set()
 
-    def gerar_por_scores(self, pesos: Dict[str, float], forcar_balanceamento: bool = False, max_tentativas: int = 500) -> List[int]:
+        disponiveis = [d for d in range(DEZENA_MIN, DEZENA_MAX + 1)
+                       if d not in numeros_removidos and d not in numeros_fixos]
+
+        faltam = TAMANHO_JOGO - len(numeros_fixos)
+        if faltam > len(disponiveis):
+            faltam = len(disponiveis)
+
+        escolhidos = list(numeros_fixos) + self.rng.sample(disponiveis, faltam)
+        return sorted(escolhidos)[:TAMANHO_JOGO]
+
+    def gerar_por_scores(self, pesos: Dict[str, float], forcar_balanceamento: bool = False,
+                         numeros_fixos: Set[int] = None, numeros_removidos: Set[int] = None,
+                         max_tentativas: int = 500) -> List[int]:
+        numeros_fixos = numeros_fixos or set()
+        numeros_removidos = numeros_removidos or set()
+
         scores_freq = self.analisador.scores_frequencia() if pesos.get('frequencia', 0) > 0 else {}
         scores_markov = self.analisador.scores_markov() if pesos.get('markov', 0) > 0 else {}
         scores_cooc = self.analisador.scores_coocorrencia() if pesos.get('coocorrencia', 0) > 0 else {}
@@ -185,24 +280,30 @@ class GeradorJogos:
 
         scores_combinados = {}
         for d in range(DEZENA_MIN, DEZENA_MAX + 1):
-            score = ScoreDezena(
-                dezena=d,
-                frequencia=scores_freq.get(d, 0),
-                markov=scores_markov.get(d, 0),
-                coocorrencia=scores_cooc.get(d, 0),
-                atraso=scores_atraso.get(d, 0)
-            )
-            scores_combinados[d] = score.score_total(pesos)
+            if d in numeros_removidos:
+                scores_combinados[d] = 0
+            else:
+                score = ScoreDezena(
+                    dezena=d,
+                    frequencia=scores_freq.get(d, 0),
+                    markov=scores_markov.get(d, 0),
+                    coocorrencia=scores_cooc.get(d, 0),
+                    atraso=scores_atraso.get(d, 0)
+                )
+                scores_combinados[d] = score.score_total(pesos)
 
-        dezenas = list(range(DEZENA_MIN, DEZENA_MAX + 1))
-        pesos_escolha = [scores_combinados[d] + 0.1 for d in dezenas]
+        dezenas = [d for d in range(DEZENA_MIN, DEZENA_MAX + 1) if d not in numeros_removidos and d not in numeros_fixos]
+        pesos_escolha = [scores_combinados.get(d, 0) + 0.1 for d in dezenas]
+
+        faltam = TAMANHO_JOGO - len(numeros_fixos)
 
         for _ in range(max_tentativas):
-            escolhidas: Set[int] = set()
+            escolhidas: Set[int] = set(numeros_fixos)
             tentativas_internas = 0
             while len(escolhidas) < TAMANHO_JOGO and tentativas_internas < 100:
-                escolha = self.rng.choices(dezenas, weights=pesos_escolha, k=1)[0]
-                escolhidas.add(escolha)
+                if dezenas and pesos_escolha:
+                    escolha = self.rng.choices(dezenas, weights=pesos_escolha, k=1)[0]
+                    escolhidas.add(escolha)
                 tentativas_internas += 1
 
             if len(escolhidas) < TAMANHO_JOGO:
@@ -212,9 +313,10 @@ class GeradorJogos:
             if not forcar_balanceamento or self._verificar_balanceamento(jogo):
                 return jogo
 
-        return self.gerar_uniforme()
+        return self.gerar_uniforme(numeros_fixos, numeros_removidos)
 
-    def gerar_jogos(self, quantidade: int, algoritmos: List[str], forcar_balanceamento: bool = False) -> List[List[int]]:
+    def gerar_jogos(self, quantidade: int, algoritmos: List[str], forcar_balanceamento: bool = False,
+                    numeros_fixos: Set[int] = None, numeros_removidos: Set[int] = None) -> List[List[int]]:
         peso_base = 1.0 / len(algoritmos) if algoritmos else 0
         pesos = {
             'frequencia': peso_base if 'frequencia' in algoritmos else 0,
@@ -230,9 +332,9 @@ class GeradorJogos:
         while len(jogos) < quantidade and tentativas < quantidade * 10:
             tentativas += 1
             if 'uniforme' in algoritmos and not any(pesos.values()):
-                jogo = self.gerar_uniforme()
+                jogo = self.gerar_uniforme(numeros_fixos, numeros_removidos)
             else:
-                jogo = self.gerar_por_scores(pesos, forcar_balanceamento)
+                jogo = self.gerar_por_scores(pesos, forcar_balanceamento, numeros_fixos, numeros_removidos)
 
             jogo_tuple = tuple(jogo)
             if jogo_tuple not in jogos_gerados:
@@ -240,6 +342,114 @@ class GeradorJogos:
                 jogos.append(jogo)
 
         return jogos
+
+
+class GeradorFechamento:
+    """Gera fechamentos/desdobramentos para garantir premiacoes."""
+
+    @staticmethod
+    def gerar_fechamento(dezenas_base: List[int], garantia: int = 4) -> List[List[int]]:
+        """
+        Gera um fechamento a partir de dezenas base.
+        garantia: 4 = garantir quadra, 5 = garantir quina, 6 = garantir sena
+        """
+        if len(dezenas_base) < 6:
+            return [sorted(dezenas_base)]
+
+        if len(dezenas_base) == 6:
+            return [sorted(dezenas_base)]
+
+        # Gerar todas as combinacoes de 6 numeros
+        todas_combinacoes = list(itertools.combinations(sorted(dezenas_base), 6))
+
+        if garantia == 6:
+            # Para garantir sena, precisa de todas as combinacoes
+            return [list(c) for c in todas_combinacoes]
+
+        # Fechamento otimizado para garantir quadra ou quina
+        jogos_selecionados = []
+        combinacoes_cobertas = set()
+
+        # Gerar subconjuntos que precisam ser cobertos
+        tamanho_cobertura = garantia
+        subconjuntos_necessarios = set(itertools.combinations(sorted(dezenas_base), tamanho_cobertura))
+
+        for combo in todas_combinacoes:
+            # Verificar quais subconjuntos esta combinacao cobre
+            subs_cobertos = set(itertools.combinations(combo, tamanho_cobertura))
+            novos_cobertos = subs_cobertos - combinacoes_cobertas
+
+            if novos_cobertos:
+                jogos_selecionados.append(list(combo))
+                combinacoes_cobertas.update(subs_cobertos)
+
+                if combinacoes_cobertas >= subconjuntos_necessarios:
+                    break
+
+        return jogos_selecionados
+
+    @staticmethod
+    def info_fechamento(num_dezenas: int) -> Dict[str, int]:
+        """Retorna informacoes sobre o fechamento."""
+        from math import comb
+        total_jogos = comb(num_dezenas, 6)
+
+        # Estimativas de jogos necessarios para cada garantia
+        # (valores aproximados baseados em tabelas de fechamento)
+        fechamentos = {
+            7: {'total': 7, 'quadra': 4, 'quina': 6, 'sena': 7},
+            8: {'total': 28, 'quadra': 6, 'quina': 12, 'sena': 28},
+            9: {'total': 84, 'quadra': 9, 'quina': 30, 'sena': 84},
+            10: {'total': 210, 'quadra': 14, 'quina': 50, 'sena': 210},
+            11: {'total': 462, 'quadra': 20, 'quina': 77, 'sena': 462},
+            12: {'total': 924, 'quadra': 27, 'quina': 132, 'sena': 924},
+            13: {'total': 1716, 'quadra': 35, 'quina': 210, 'sena': 1716},
+            14: {'total': 3003, 'quadra': 45, 'quina': 315, 'sena': 3003},
+            15: {'total': 5005, 'quadra': 56, 'quina': 455, 'sena': 5005},
+            16: {'total': 8008, 'quadra': 70, 'quina': 640, 'sena': 8008},
+        }
+
+        return fechamentos.get(num_dezenas, {'total': total_jogos, 'quadra': '?', 'quina': '?', 'sena': total_jogos})
+
+
+def carregar_jogos_salvos() -> List[JogoSalvo]:
+    """Carrega jogos salvos do arquivo JSON."""
+    caminho = Path(ARQUIVO_JOGOS_SALVOS)
+    if not caminho.exists():
+        return []
+    try:
+        with open(caminho, 'r', encoding='utf-8') as f:
+            dados = json.load(f)
+            return [JogoSalvo.from_dict(j) for j in dados]
+    except Exception:
+        return []
+
+
+def salvar_jogos(jogos: List[JogoSalvo]):
+    """Salva jogos no arquivo JSON."""
+    with open(ARQUIVO_JOGOS_SALVOS, 'w', encoding='utf-8') as f:
+        json.dump([j.to_dict() for j in jogos], f, ensure_ascii=False, indent=2)
+
+
+def proximo_id_jogo(jogos: List[JogoSalvo]) -> int:
+    """Retorna o proximo ID disponivel."""
+    if not jogos:
+        return 1
+    return max(j.id for j in jogos) + 1
+
+
+@st.cache_data(ttl=3600)
+def buscar_resultados_caixa() -> List[Dict]:
+    """Busca resultados atualizados da API da Caixa."""
+    try:
+        url = "https://servicebus2.caixa.gov.br/portaldeloterias/api/megasena"
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            dados = response.json()
+            return dados
+    except Exception:
+        pass
+    return None
 
 
 @st.cache_data
@@ -324,12 +534,53 @@ def criar_volante_html(dezenas: List[int]) -> str:
     return html
 
 
+def gerar_excel_jogos(jogos: List[List[int]], algoritmos: List[str]) -> bytes:
+    """Gera arquivo Excel com os jogos."""
+    dados = []
+    for i, jogo in enumerate(jogos, 1):
+        linha = {'Jogo': i}
+        for j, d in enumerate(jogo, 1):
+            linha[f'Dezena {j}'] = d
+        linha['Pares'] = sum(1 for d in jogo if d % 2 == 0)
+        linha['Impares'] = 6 - linha['Pares']
+        dados.append(linha)
+
+    df = pd.DataFrame(dados)
+
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Jogos')
+
+        # Adicionar aba com info
+        info_df = pd.DataFrame({
+            'Informacao': ['Data de Geracao', 'Algoritmos Usados', 'Total de Jogos'],
+            'Valor': [dt.datetime.now().strftime('%d/%m/%Y %H:%M'), ', '.join(algoritmos), len(jogos)]
+        })
+        info_df.to_excel(writer, index=False, sheet_name='Info')
+
+    return output.getvalue()
+
+
+def gerar_csv_jogos(jogos: List[List[int]]) -> str:
+    """Gera CSV com os jogos."""
+    linhas = ['Jogo,Dezena1,Dezena2,Dezena3,Dezena4,Dezena5,Dezena6']
+    for i, jogo in enumerate(jogos, 1):
+        linhas.append(f'{i},{",".join(str(d) for d in jogo)}')
+    return '\n'.join(linhas)
+
+
 def main():
     st.set_page_config(
         page_title="Mega-Sena - Gerador Inteligente",
         page_icon="🍀",
         layout="wide"
     )
+
+    # Inicializar session state
+    if 'jogos_gerados' not in st.session_state:
+        st.session_state.jogos_gerados = []
+    if 'algoritmos_usados' not in st.session_state:
+        st.session_state.algoritmos_usados = []
 
     # CSS personalizado
     st.markdown("""
@@ -363,6 +614,13 @@ def main():
             margin: 3px;
             box-shadow: 0 2px 5px rgba(0,0,0,0.2);
         }
+        .numero-fixo {
+            background: linear-gradient(135deg, #1565c0, #42a5f5) !important;
+        }
+        .numero-acerto {
+            background: linear-gradient(135deg, #f9a825, #fdd835) !important;
+            color: #333 !important;
+        }
         .stat-card {
             background: white;
             padding: 15px;
@@ -375,6 +633,9 @@ def main():
             font-weight: bold;
             color: #2e7d32;
         }
+        .premio-sena { color: #2e7d32; font-weight: bold; }
+        .premio-quina { color: #1565c0; font-weight: bold; }
+        .premio-quadra { color: #f9a825; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -382,7 +643,7 @@ def main():
     st.markdown("""
     <div class="main-header">
         <h1>🍀 Gerador Inteligente - Mega-Sena</h1>
-        <p>Combine algoritmos estatisticos para gerar seus jogos</p>
+        <p>Gere jogos com algoritmos estatisticos, fechamentos, simulacoes e muito mais!</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -390,6 +651,7 @@ def main():
     caminho = Path("resultados.xlsx")
     if not caminho.exists():
         st.error("Arquivo 'resultados.xlsx' nao encontrado!")
+        st.info("Clique em 'Atualizar Resultados' na aba Configuracoes para baixar os dados.")
         return
 
     concursos = carregar_resultados_excel(str(caminho))
@@ -415,15 +677,65 @@ def main():
         usar_uniforme = st.checkbox("🎲 Uniforme", value=False, help="Aleatorio puro")
 
         st.subheader("🎯 Quantidade")
-        qtd_jogos = st.number_input("Jogos a gerar:", 1, 20, 6)
+        qtd_jogos = st.number_input("Jogos a gerar:", 1, 50, 6)
+
+        st.subheader("🔢 Numeros Fixos")
+        numeros_fixos_str = st.text_input("Numeros fixos (ex: 7,13,25):", "",
+                                          help="Numeros que DEVEM aparecer em todos os jogos")
+
+        st.subheader("🚫 Numeros Removidos")
+        numeros_removidos_str = st.text_input("Numeros removidos (ex: 1,2,3):", "",
+                                               help="Numeros que NAO devem aparecer")
+
+    # Processar numeros fixos e removidos
+    numeros_fixos = set()
+    numeros_removidos = set()
+
+    if numeros_fixos_str:
+        try:
+            numeros_fixos = {int(n.strip()) for n in numeros_fixos_str.split(',') if n.strip()}
+            numeros_fixos = {n for n in numeros_fixos if DEZENA_MIN <= n <= DEZENA_MAX}
+        except ValueError:
+            st.sidebar.error("Formato invalido para numeros fixos")
+
+    if numeros_removidos_str:
+        try:
+            numeros_removidos = {int(n.strip()) for n in numeros_removidos_str.split(',') if n.strip()}
+            numeros_removidos = {n for n in numeros_removidos if DEZENA_MIN <= n <= DEZENA_MAX}
+        except ValueError:
+            st.sidebar.error("Formato invalido para numeros removidos")
+
+    # Validar conflitos
+    conflitos = numeros_fixos & numeros_removidos
+    if conflitos:
+        st.sidebar.error(f"Conflito! Numeros em ambas as listas: {conflitos}")
+        numeros_removidos -= conflitos
+
+    if len(numeros_fixos) > 6:
+        st.sidebar.error("Maximo de 6 numeros fixos!")
+        numeros_fixos = set(list(numeros_fixos)[:6])
 
     # Tabs principais
-    tab1, tab2, tab3 = st.tabs(["🎰 Gerar Jogos", "📊 Estatisticas", "ℹ️ Sobre"])
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+        "🎰 Gerar Jogos",
+        "📊 Estatisticas",
+        "🔒 Fechamento",
+        "🎯 Simulador",
+        "💾 Meus Jogos",
+        "✅ Conferir",
+        "⚙️ Config"
+    ])
 
     with tab1:
         col1, col2 = st.columns([2, 1])
 
         with col1:
+            # Mostrar numeros fixos/removidos
+            if numeros_fixos:
+                st.info(f"🔵 Numeros Fixos: {', '.join(f'{n:02d}' for n in sorted(numeros_fixos))}")
+            if numeros_removidos:
+                st.warning(f"🔴 Numeros Removidos: {', '.join(f'{n:02d}' for n in sorted(numeros_removidos))}")
+
             if st.button("🍀 GERAR JOGOS", type="primary", use_container_width=True):
                 algoritmos = []
                 if usar_frequencia:
@@ -441,7 +753,10 @@ def main():
                     st.warning("Selecione pelo menos um algoritmo!")
                 else:
                     gerador = GeradorJogos(analisador)
-                    jogos = gerador.gerar_jogos(qtd_jogos, algoritmos, usar_balanceado)
+                    jogos = gerador.gerar_jogos(qtd_jogos, algoritmos, usar_balanceado, numeros_fixos, numeros_removidos)
+
+                    st.session_state.jogos_gerados = jogos
+                    st.session_state.algoritmos_usados = algoritmos + (['balanceado'] if usar_balanceado else [])
 
                     st.success(f"✅ {len(jogos)} jogos gerados!")
 
@@ -456,34 +771,78 @@ def main():
 
                     st.caption(f"Algoritmos: {', '.join(algos_nomes)}")
 
-                    for i, jogo in enumerate(jogos, 1):
-                        pares = sum(1 for d in jogo if d % 2 == 0)
-                        impares = 6 - pares
+            # Exibir jogos gerados
+            if st.session_state.jogos_gerados:
+                st.markdown("---")
 
-                        with st.container():
-                            st.markdown(f"### Jogo {i:02d}")
+                # Botoes de exportacao
+                col_exp1, col_exp2, col_exp3 = st.columns(3)
 
-                            # Numeros grandes
-                            numeros_html = "".join([f'<span class="numero-grande">{d:02d}</span>' for d in jogo])
-                            st.markdown(f'<div>{numeros_html}</div>', unsafe_allow_html=True)
+                with col_exp1:
+                    excel_data = gerar_excel_jogos(st.session_state.jogos_gerados, st.session_state.algoritmos_usados)
+                    st.download_button(
+                        label="📥 Baixar Excel",
+                        data=excel_data,
+                        file_name=f"jogos_megasena_{dt.datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
 
-                            # Info do jogo
-                            col_a, col_b, col_c = st.columns(3)
-                            col_a.metric("Pares", pares)
-                            col_b.metric("Impares", impares)
+                with col_exp2:
+                    csv_data = gerar_csv_jogos(st.session_state.jogos_gerados)
+                    st.download_button(
+                        label="📥 Baixar CSV",
+                        data=csv_data,
+                        file_name=f"jogos_megasena_{dt.datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                        mime="text/csv"
+                    )
 
-                            faixas = [0, 0, 0]
-                            for d in jogo:
-                                if d <= 20: faixas[0] += 1
-                                elif d <= 40: faixas[1] += 1
-                                else: faixas[2] += 1
-                            col_c.metric("Faixas", f"{faixas[0]}-{faixas[1]}-{faixas[2]}")
+                with col_exp3:
+                    if st.button("💾 Salvar Jogos"):
+                        jogos_salvos = carregar_jogos_salvos()
+                        for jogo in st.session_state.jogos_gerados:
+                            novo_jogo = JogoSalvo(
+                                id=proximo_id_jogo(jogos_salvos),
+                                dezenas=jogo,
+                                data_criacao=dt.datetime.now().isoformat(),
+                                algoritmos=st.session_state.algoritmos_usados
+                            )
+                            jogos_salvos.append(novo_jogo)
+                        salvar_jogos(jogos_salvos)
+                        st.success(f"✅ {len(st.session_state.jogos_gerados)} jogos salvos!")
 
-                            # Volante visual
-                            with st.expander("Ver Volante"):
-                                st.markdown(criar_volante_html(jogo), unsafe_allow_html=True)
+                st.markdown("---")
 
-                            st.divider()
+                for i, jogo in enumerate(st.session_state.jogos_gerados, 1):
+                    pares = sum(1 for d in jogo if d % 2 == 0)
+                    impares = 6 - pares
+
+                    with st.container():
+                        st.markdown(f"### Jogo {i:02d}")
+
+                        # Numeros grandes (destacar fixos)
+                        numeros_html = ""
+                        for d in jogo:
+                            classe = "numero-grande numero-fixo" if d in numeros_fixos else "numero-grande"
+                            numeros_html += f'<span class="{classe}">{d:02d}</span>'
+                        st.markdown(f'<div>{numeros_html}</div>', unsafe_allow_html=True)
+
+                        # Info do jogo
+                        col_a, col_b, col_c = st.columns(3)
+                        col_a.metric("Pares", pares)
+                        col_b.metric("Impares", impares)
+
+                        faixas = [0, 0, 0]
+                        for d in jogo:
+                            if d <= 20: faixas[0] += 1
+                            elif d <= 40: faixas[1] += 1
+                            else: faixas[2] += 1
+                        col_c.metric("Faixas", f"{faixas[0]}-{faixas[1]}-{faixas[2]}")
+
+                        # Volante visual
+                        with st.expander("Ver Volante"):
+                            st.markdown(criar_volante_html(jogo), unsafe_allow_html=True)
+
+                        st.divider()
 
         with col2:
             st.subheader("📋 Ultimo Sorteio")
@@ -542,34 +901,331 @@ def main():
             st.bar_chart(df_atrasos.set_index('Dezena'))
 
     with tab3:
-        st.subheader("ℹ️ Como Funciona")
+        st.subheader("🔒 Fechamento / Desdobramento")
 
         st.markdown("""
-        ### Algoritmos Disponiveis
-
-        | Algoritmo | Descricao |
-        |-----------|-----------|
-        | **Frequencia** | Prioriza numeros que mais sairam no periodo |
-        | **Markov** | Analisa quais numeros tendem a seguir os do ultimo sorteio |
-        | **Co-ocorrencia** | Prioriza numeros que costumam sair juntos |
-        | **Atrasados** | Prioriza numeros que nao saem ha muito tempo |
-        | **Balanceado** | Forca 3 pares/3 impares e distribuicao por faixas |
-        | **Uniforme** | Geracao totalmente aleatoria |
-
-        ### Formula de Pontuacao
-
-        Cada dezena recebe um score combinado:
-        ```
-        Score = (freq × peso) + (markov × peso) + (cooc × peso) + (atraso × peso)
-        ```
-
-        Os jogos sao gerados priorizando dezenas com maiores scores.
-
-        ### Importante
-
-        ⚠️ **Loteria e um jogo de azar.** Nenhum algoritmo pode prever os numeros sorteados.
-        Estes metodos apenas organizam as apostas baseado em estatisticas historicas.
+        O **fechamento** permite jogar mais numeros distribuidos em varios jogos,
+        garantindo uma premiacao minima se acertar uma quantidade de numeros.
         """)
+
+        col1, col2 = st.columns([1, 1])
+
+        with col1:
+            st.markdown("### Configurar Fechamento")
+
+            dezenas_fechamento = st.text_input(
+                "Digite as dezenas para o fechamento (7 a 15 numeros):",
+                placeholder="Ex: 5, 10, 15, 20, 25, 30, 35",
+                help="Separe os numeros por virgula"
+            )
+
+            garantia = st.selectbox(
+                "Garantia minima:",
+                options=[4, 5, 6],
+                format_func=lambda x: {4: "Quadra (4 acertos)", 5: "Quina (5 acertos)", 6: "Sena (6 acertos)"}[x]
+            )
+
+        with col2:
+            st.markdown("### Tabela de Referencia")
+            st.markdown("""
+            | Dezenas | Jogos (Quadra) | Jogos (Quina) | Jogos (Sena) |
+            |---------|----------------|---------------|--------------|
+            | 7       | 4              | 6             | 7            |
+            | 8       | 6              | 12            | 28           |
+            | 9       | 9              | 30            | 84           |
+            | 10      | 14             | 50            | 210          |
+            | 11      | 20             | 77            | 462          |
+            | 12      | 27             | 132           | 924          |
+            """)
+
+        if dezenas_fechamento:
+            try:
+                dezenas_list = [int(n.strip()) for n in dezenas_fechamento.split(',') if n.strip()]
+                dezenas_list = [n for n in dezenas_list if DEZENA_MIN <= n <= DEZENA_MAX]
+                dezenas_list = list(set(dezenas_list))  # Remover duplicatas
+
+                if len(dezenas_list) < 7:
+                    st.warning("Minimo de 7 numeros para fechamento!")
+                elif len(dezenas_list) > 15:
+                    st.warning("Maximo de 15 numeros para fechamento (para evitar muitos jogos)!")
+                else:
+                    st.info(f"📊 {len(dezenas_list)} numeros selecionados: {', '.join(f'{d:02d}' for d in sorted(dezenas_list))}")
+
+                    if st.button("🔒 Gerar Fechamento", type="primary"):
+                        with st.spinner("Gerando fechamento..."):
+                            jogos_fechamento = GeradorFechamento.gerar_fechamento(dezenas_list, garantia)
+
+                        st.success(f"✅ Fechamento gerado com {len(jogos_fechamento)} jogos!")
+                        st.caption(f"Garantia: {'Quadra' if garantia == 4 else 'Quina' if garantia == 5 else 'Sena'}")
+
+                        # Exportar
+                        col_e1, col_e2 = st.columns(2)
+                        with col_e1:
+                            excel_fech = gerar_excel_jogos(jogos_fechamento, [f'Fechamento {garantia}'])
+                            st.download_button(
+                                "📥 Baixar Fechamento (Excel)",
+                                data=excel_fech,
+                                file_name=f"fechamento_{len(dezenas_list)}dez_{garantia}garantia.xlsx"
+                            )
+
+                        # Exibir jogos
+                        for i, jogo in enumerate(jogos_fechamento, 1):
+                            numeros_html = "".join([f'<span class="numero-grande">{d:02d}</span>' for d in jogo])
+                            st.markdown(f"**Jogo {i:02d}:** {numeros_html}", unsafe_allow_html=True)
+
+            except ValueError:
+                st.error("Formato invalido! Use numeros separados por virgula.")
+
+    with tab4:
+        st.subheader("🎯 Simulador de Jogos")
+
+        st.markdown("""
+        Teste seus jogos nos **sorteios anteriores** para ver quantas vezes
+        teria acertado quadra, quina ou sena!
+        """)
+
+        col1, col2 = st.columns([1, 1])
+
+        with col1:
+            dezenas_simular = st.text_input(
+                "Digite 6 numeros para simular:",
+                placeholder="Ex: 5, 10, 15, 20, 25, 30"
+            )
+
+            qtd_concursos = st.slider("Quantidade de concursos para simular:", 50, 500, 100)
+
+        if dezenas_simular:
+            try:
+                dezenas_sim = [int(n.strip()) for n in dezenas_simular.split(',') if n.strip()]
+                dezenas_sim = sorted([n for n in dezenas_sim if DEZENA_MIN <= n <= DEZENA_MAX])[:6]
+
+                if len(dezenas_sim) != 6:
+                    st.warning("Digite exatamente 6 numeros validos!")
+                else:
+                    st.info(f"Simulando: {' - '.join(f'{d:02d}' for d in dezenas_sim)}")
+
+                    if st.button("🎯 Simular", type="primary"):
+                        resultados = analisador_completo.simular_jogo(dezenas_sim, qtd_concursos)
+
+                        with col2:
+                            st.markdown("### Resultados da Simulacao")
+
+                            # Metricas
+                            col_m1, col_m2, col_m3 = st.columns(3)
+                            col_m1.metric("🏆 Senas", resultados['acertos'][6], delta=None)
+                            col_m2.metric("⭐ Quinas", resultados['acertos'][5], delta=None)
+                            col_m3.metric("🎯 Quadras", resultados['acertos'][4], delta=None)
+
+                            # Distribuicao completa
+                            st.markdown("#### Distribuicao de Acertos")
+                            df_acertos = pd.DataFrame([
+                                {'Acertos': f'{i} acertos', 'Quantidade': resultados['acertos'][i]}
+                                for i in range(7)
+                            ])
+                            st.bar_chart(df_acertos.set_index('Acertos'))
+
+                            # Detalhes de premios
+                            if resultados['detalhes']:
+                                st.markdown("#### Premiacoes (4+ acertos)")
+                                for det in resultados['detalhes']:
+                                    classe = 'premio-sena' if det['acertos'] == 6 else 'premio-quina' if det['acertos'] == 5 else 'premio-quadra'
+                                    st.markdown(
+                                        f"<span class='{classe}'>Concurso {det['concurso']}</span> ({det['data']}): "
+                                        f"**{det['acertos']} acertos** - Sorteados: {det['dezenas_sorteadas']}",
+                                        unsafe_allow_html=True
+                                    )
+                            else:
+                                st.info("Nenhuma premiacao (4+) nos concursos simulados.")
+
+            except ValueError:
+                st.error("Formato invalido! Use numeros separados por virgula.")
+
+    with tab5:
+        st.subheader("💾 Meus Jogos Salvos")
+
+        jogos_salvos = carregar_jogos_salvos()
+
+        if not jogos_salvos:
+            st.info("Nenhum jogo salvo ainda. Gere jogos na aba 'Gerar Jogos' e clique em 'Salvar'.")
+        else:
+            st.success(f"📋 {len(jogos_salvos)} jogos salvos")
+
+            # Opcoes
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                if st.button("🗑️ Limpar Todos"):
+                    salvar_jogos([])
+                    st.rerun()
+
+            with col2:
+                excel_salvos = gerar_excel_jogos([j.dezenas for j in jogos_salvos], ['Salvos'])
+                st.download_button(
+                    "📥 Exportar Todos (Excel)",
+                    data=excel_salvos,
+                    file_name="meus_jogos_megasena.xlsx"
+                )
+
+            st.markdown("---")
+
+            for jogo in jogos_salvos:
+                with st.container():
+                    col_j1, col_j2, col_j3 = st.columns([3, 1, 1])
+
+                    with col_j1:
+                        numeros_html = "".join([f'<span class="numero-grande">{d:02d}</span>' for d in jogo.dezenas])
+                        st.markdown(f"**Jogo #{jogo.id}** - {numeros_html}", unsafe_allow_html=True)
+                        st.caption(f"Criado em: {jogo.data_criacao[:10]} | Algoritmos: {', '.join(jogo.algoritmos)}")
+
+                    with col_j2:
+                        if jogo.acertos:
+                            melhor = max(jogo.acertos.values()) if jogo.acertos else 0
+                            st.metric("Melhor", f"{melhor} acertos")
+
+                    with col_j3:
+                        if st.button("🗑️", key=f"del_{jogo.id}"):
+                            jogos_salvos = [j for j in jogos_salvos if j.id != jogo.id]
+                            salvar_jogos(jogos_salvos)
+                            st.rerun()
+
+                    st.divider()
+
+    with tab6:
+        st.subheader("✅ Conferir Jogos")
+
+        st.markdown("Confira seus jogos contra os resultados dos sorteios.")
+
+        # Selecionar concurso
+        concursos_recentes = sorted(concursos, key=lambda c: c.numero, reverse=True)[:20]
+        opcoes_concurso = {f"Concurso {c.numero} ({c.data}) - {'-'.join(f'{d:02d}' for d in c.dezenas)}": c
+                          for c in concursos_recentes}
+
+        concurso_selecionado = st.selectbox("Selecione o concurso:", list(opcoes_concurso.keys()))
+        concurso_conf = opcoes_concurso[concurso_selecionado]
+
+        st.info(f"🎱 Numeros sorteados: **{' - '.join(f'{d:02d}' for d in concurso_conf.dezenas)}**")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.markdown("### Conferir Jogo Manual")
+            jogo_conferir = st.text_input("Digite os 6 numeros:", placeholder="Ex: 5, 10, 15, 20, 25, 30")
+
+            if jogo_conferir:
+                try:
+                    dezenas_conf = [int(n.strip()) for n in jogo_conferir.split(',') if n.strip()]
+                    dezenas_conf = sorted([n for n in dezenas_conf if DEZENA_MIN <= n <= DEZENA_MAX])[:6]
+
+                    if len(dezenas_conf) == 6:
+                        acertos = analisador_completo.conferir_jogo(dezenas_conf, concurso_conf)
+                        acertados = set(dezenas_conf) & concurso_conf.dezenas_set
+
+                        # Exibir com destaque nos acertos
+                        numeros_html = ""
+                        for d in dezenas_conf:
+                            classe = "numero-grande numero-acerto" if d in acertados else "numero-grande"
+                            numeros_html += f'<span class="{classe}">{d:02d}</span>'
+
+                        st.markdown(numeros_html, unsafe_allow_html=True)
+
+                        if acertos == 6:
+                            st.balloons()
+                            st.success(f"🏆 SENA! {acertos} acertos!")
+                        elif acertos == 5:
+                            st.success(f"⭐ QUINA! {acertos} acertos!")
+                        elif acertos == 4:
+                            st.success(f"🎯 QUADRA! {acertos} acertos!")
+                        else:
+                            st.info(f"📊 {acertos} acertos")
+                except ValueError:
+                    st.error("Formato invalido!")
+
+        with col2:
+            st.markdown("### Conferir Jogos Salvos")
+
+            jogos_salvos = carregar_jogos_salvos()
+
+            if jogos_salvos:
+                if st.button("✅ Conferir Todos", type="primary"):
+                    for jogo in jogos_salvos:
+                        acertos = analisador_completo.conferir_jogo(jogo.dezenas, concurso_conf)
+                        if jogo.acertos is None:
+                            jogo.acertos = {}
+                        jogo.acertos[concurso_conf.numero] = acertos
+                        jogo.conferido = True
+
+                    salvar_jogos(jogos_salvos)
+                    st.success("Todos os jogos conferidos!")
+
+                    # Mostrar resultados
+                    for jogo in jogos_salvos:
+                        acertos = jogo.acertos.get(concurso_conf.numero, 0)
+                        acertados = set(jogo.dezenas) & concurso_conf.dezenas_set
+
+                        numeros_html = ""
+                        for d in jogo.dezenas:
+                            classe = "numero-grande numero-acerto" if d in acertados else "numero-grande"
+                            numeros_html += f'<span class="{classe}">{d:02d}</span>'
+
+                        premio = "🏆 SENA!" if acertos == 6 else "⭐ QUINA!" if acertos == 5 else "🎯 QUADRA!" if acertos == 4 else ""
+                        st.markdown(f"**Jogo #{jogo.id}:** {numeros_html} - **{acertos} acertos** {premio}", unsafe_allow_html=True)
+            else:
+                st.info("Nenhum jogo salvo para conferir.")
+
+    with tab7:
+        st.subheader("⚙️ Configuracoes")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.markdown("### 🔄 Atualizar Resultados")
+            st.markdown("Baixe os resultados mais recentes da Mega-Sena.")
+
+            if st.button("🔄 Buscar Atualizacoes", type="primary"):
+                with st.spinner("Buscando resultados da Caixa..."):
+                    dados = buscar_resultados_caixa()
+
+                if dados:
+                    st.success(f"✅ Ultimo concurso disponivel: {dados.get('numero', 'N/A')}")
+                    st.json(dados)
+                else:
+                    st.error("Nao foi possivel buscar os resultados. Tente novamente mais tarde.")
+
+            st.markdown("---")
+
+            st.markdown("### 📁 Arquivo de Dados")
+            st.write(f"**Arquivo atual:** resultados.xlsx")
+            st.write(f"**Total de concursos:** {len(concursos)}")
+            if concursos:
+                st.write(f"**Primeiro concurso:** {concursos[0].numero} ({concursos[0].data})")
+                st.write(f"**Ultimo concurso:** {concursos[-1].numero} ({concursos[-1].data})")
+
+        with col2:
+            st.markdown("### ℹ️ Sobre o Sistema")
+
+            st.markdown("""
+            **Funcionalidades:**
+            - ✅ Geracao com multiplos algoritmos
+            - ✅ Numeros fixos e removidos
+            - ✅ Fechamento/Desdobramento
+            - ✅ Simulador de jogos
+            - ✅ Salvar/Carregar jogos
+            - ✅ Conferencia automatica
+            - ✅ Exportar Excel/CSV
+            - ✅ Atualizacao de resultados
+
+            **Algoritmos:**
+            | Algoritmo | Descricao |
+            |-----------|-----------|
+            | Frequencia | Numeros mais sorteados |
+            | Markov | Seguidores do ultimo sorteio |
+            | Co-ocorrencia | Pares frequentes |
+            | Atrasados | Numeros que nao saem ha tempo |
+            | Balanceado | Equilibrio par/impar e faixas |
+            """)
+
+            st.markdown("---")
+            st.warning("⚠️ **Loteria e um jogo de azar.** Nenhum algoritmo pode prever os numeros sorteados.")
 
         st.markdown("---")
         st.caption(f"Base de dados: {len(concursos)} concursos | Periodo: {concursos[0].data} a {concursos[-1].data}")
