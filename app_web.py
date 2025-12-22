@@ -21,7 +21,7 @@ import random
 from collections import defaultdict
 from dataclasses import dataclass, asdict
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple, Any
 import requests
 
 import pandas as pd
@@ -438,18 +438,134 @@ def proximo_id_jogo(jogos: List[JogoSalvo]) -> int:
     return max(j.id for j in jogos) + 1
 
 
-@st.cache_data(ttl=3600)
-def buscar_resultados_caixa() -> List[Dict]:
-    """Busca resultados atualizados da API da Caixa."""
+def buscar_concurso_caixa(numero: int = None) -> Dict:
+    """Busca um concurso especifico ou o ultimo da API da Caixa."""
     try:
-        url = "https://servicebus2.caixa.gov.br/portaldeloterias/api/megasena"
+        if numero:
+            url = f"https://servicebus2.caixa.gov.br/portaldeloterias/api/megasena/{numero}"
+        else:
+            url = "https://servicebus2.caixa.gov.br/portaldeloterias/api/megasena"
         response = requests.get(url, timeout=10)
         if response.status_code == 200:
-            dados = response.json()
-            return dados
+            return response.json()
     except Exception:
         pass
     return None
+
+
+def buscar_todos_concursos_novos(ultimo_local: int) -> List[Dict]:
+    """Busca todos os concursos novos desde o ultimo local."""
+    novos = []
+
+    # Primeiro busca o ultimo concurso para saber ate onde ir
+    ultimo = buscar_concurso_caixa()
+    if not ultimo:
+        return novos
+
+    ultimo_numero = ultimo.get('numero', 0)
+
+    # Se ja esta atualizado, retorna so o ultimo para verificar
+    if ultimo_local >= ultimo_numero:
+        return []
+
+    # Busca todos os concursos faltantes
+    for num in range(ultimo_local + 1, ultimo_numero + 1):
+        concurso = buscar_concurso_caixa(num)
+        if concurso:
+            novos.append(concurso)
+
+    return novos
+
+
+def converter_concurso_caixa(dados: Dict) -> Dict:
+    """Converte dados da API da Caixa para formato do Excel."""
+    try:
+        dezenas = dados.get('listaDezenas', [])
+        if not dezenas:
+            dezenas = dados.get('dezenas', [])
+
+        # Converter para inteiros
+        dezenas_int = [int(d) for d in dezenas[:6]]
+
+        return {
+            'concurso': dados.get('numero'),
+            'data': dados.get('dataApuracao', ''),
+            'dezena1': dezenas_int[0] if len(dezenas_int) > 0 else 0,
+            'dezena2': dezenas_int[1] if len(dezenas_int) > 1 else 0,
+            'dezena3': dezenas_int[2] if len(dezenas_int) > 2 else 0,
+            'dezena4': dezenas_int[3] if len(dezenas_int) > 3 else 0,
+            'dezena5': dezenas_int[4] if len(dezenas_int) > 4 else 0,
+            'dezena6': dezenas_int[5] if len(dezenas_int) > 5 else 0,
+        }
+    except Exception:
+        return None
+
+
+def atualizar_arquivo_resultados(caminho: str = "resultados.xlsx") -> Tuple[bool, str, int]:
+    """
+    Atualiza o arquivo de resultados com novos concursos da Caixa.
+    Retorna: (sucesso, mensagem, quantidade_novos)
+    """
+    try:
+        # Carregar dados existentes
+        if Path(caminho).exists():
+            df = pd.read_excel(caminho)
+            ultimo_local = int(df['concurso'].max()) if 'concurso' in df.columns else 0
+        else:
+            df = pd.DataFrame(columns=['concurso', 'data', 'dezena1', 'dezena2', 'dezena3', 'dezena4', 'dezena5', 'dezena6'])
+            ultimo_local = 0
+
+        # Buscar novos concursos
+        novos = buscar_todos_concursos_novos(ultimo_local)
+
+        if not novos:
+            return True, "Base de dados ja esta atualizada!", 0
+
+        # Converter e adicionar novos concursos
+        novos_convertidos = []
+        for c in novos:
+            convertido = converter_concurso_caixa(c)
+            if convertido:
+                novos_convertidos.append(convertido)
+
+        if novos_convertidos:
+            df_novos = pd.DataFrame(novos_convertidos)
+            df = pd.concat([df, df_novos], ignore_index=True)
+            df = df.drop_duplicates(subset=['concurso'], keep='last')
+            df = df.sort_values('concurso')
+
+            # Salvar arquivo
+            df.to_excel(caminho, index=False)
+
+            return True, f"Adicionados {len(novos_convertidos)} novos concursos!", len(novos_convertidos)
+
+        return True, "Nenhum concurso novo encontrado.", 0
+
+    except Exception as e:
+        return False, f"Erro ao atualizar: {str(e)}", 0
+
+
+def verificar_atualizacao_automatica(caminho: str = "resultados.xlsx") -> Tuple[bool, int]:
+    """
+    Verifica se ha novos concursos disponiveis.
+    Retorna: (ha_novos, ultimo_disponivel)
+    """
+    try:
+        ultimo = buscar_concurso_caixa()
+        if not ultimo:
+            return False, 0
+
+        ultimo_disponivel = ultimo.get('numero', 0)
+
+        if Path(caminho).exists():
+            df = pd.read_excel(caminho)
+            ultimo_local = int(df['concurso'].max()) if 'concurso' in df.columns else 0
+        else:
+            ultimo_local = 0
+
+        return ultimo_disponivel > ultimo_local, ultimo_disponivel
+    except Exception:
+        return False, 0
 
 
 @st.cache_data
@@ -656,6 +772,20 @@ def main():
 
     concursos = carregar_resultados_excel(str(caminho))
     analisador_completo = AnalisadorMegaSena(concursos)
+
+    # Verificar atualizacoes automaticamente
+    ha_atualizacao, ultimo_caixa = verificar_atualizacao_automatica()
+    if ha_atualizacao:
+        col_aviso1, col_aviso2 = st.columns([3, 1])
+        with col_aviso1:
+            st.warning(f"🔔 **Novos resultados disponiveis!** Ultimo concurso na Caixa: {ultimo_caixa} | Seu ultimo: {concursos[-1].numero}")
+        with col_aviso2:
+            if st.button("🔄 Atualizar", key="btn_atualizar_header"):
+                with st.spinner("Atualizando..."):
+                    sucesso, msg, qtd = atualizar_arquivo_resultados()
+                if sucesso and qtd > 0:
+                    st.cache_data.clear()
+                    st.rerun()
 
     # Sidebar
     with st.sidebar:
@@ -1179,17 +1309,59 @@ def main():
 
         with col1:
             st.markdown("### 🔄 Atualizar Resultados")
-            st.markdown("Baixe os resultados mais recentes da Mega-Sena.")
+            st.markdown("Baixe os resultados mais recentes da Mega-Sena diretamente da Caixa.")
 
-            if st.button("🔄 Buscar Atualizacoes", type="primary"):
-                with st.spinner("Buscando resultados da Caixa..."):
-                    dados = buscar_resultados_caixa()
+            # Verificar se ha atualizacoes disponiveis
+            ha_novos, ultimo_disponivel = verificar_atualizacao_automatica()
 
-                if dados:
-                    st.success(f"✅ Ultimo concurso disponivel: {dados.get('numero', 'N/A')}")
-                    st.json(dados)
-                else:
-                    st.error("Nao foi possivel buscar os resultados. Tente novamente mais tarde.")
+            if ha_novos:
+                st.warning(f"⚠️ Novos concursos disponiveis! Ultimo na Caixa: **{ultimo_disponivel}**")
+
+            col_btn1, col_btn2 = st.columns(2)
+
+            with col_btn1:
+                if st.button("🔄 Atualizar Agora", type="primary", use_container_width=True):
+                    with st.spinner("Baixando resultados da Caixa..."):
+                        sucesso, mensagem, qtd = atualizar_arquivo_resultados()
+
+                    if sucesso:
+                        if qtd > 0:
+                            st.success(f"✅ {mensagem}")
+                            st.balloons()
+                            # Limpar cache para recarregar dados
+                            st.cache_data.clear()
+                            st.info("🔄 Recarregue a pagina para ver os novos dados.")
+                        else:
+                            st.info(f"ℹ️ {mensagem}")
+                    else:
+                        st.error(f"❌ {mensagem}")
+
+            with col_btn2:
+                if st.button("🔍 Verificar Ultimo", use_container_width=True):
+                    with st.spinner("Consultando API da Caixa..."):
+                        dados = buscar_concurso_caixa()
+
+                    if dados:
+                        st.success(f"✅ Ultimo concurso: **{dados.get('numero')}**")
+                        dezenas = dados.get('listaDezenas', dados.get('dezenas', []))
+                        st.write(f"**Data:** {dados.get('dataApuracao', 'N/A')}")
+                        st.write(f"**Dezenas:** {' - '.join(str(d) for d in dezenas)}")
+                    else:
+                        st.error("Nao foi possivel consultar a API.")
+
+            st.markdown("---")
+
+            # Configuracao de atualizacao automatica
+            st.markdown("### ⏰ Atualizacao Automatica")
+
+            auto_update = st.checkbox(
+                "Verificar atualizacoes ao abrir o app",
+                value=True,
+                help="Verifica automaticamente se ha novos concursos"
+            )
+
+            if auto_update:
+                st.caption("O sistema verificara novos concursos sempre que voce abrir o aplicativo.")
 
             st.markdown("---")
 
@@ -1198,7 +1370,10 @@ def main():
             st.write(f"**Total de concursos:** {len(concursos)}")
             if concursos:
                 st.write(f"**Primeiro concurso:** {concursos[0].numero} ({concursos[0].data})")
-                st.write(f"**Ultimo concurso:** {concursos[-1].numero} ({concursos[-1].data})")
+                st.write(f"**Ultimo concurso local:** {concursos[-1].numero} ({concursos[-1].data})")
+                if ha_novos:
+                    st.write(f"**Ultimo na Caixa:** {ultimo_disponivel}")
+                    st.write(f"**Concursos faltando:** {ultimo_disponivel - concursos[-1].numero}")
 
         with col2:
             st.markdown("### ℹ️ Sobre o Sistema")
