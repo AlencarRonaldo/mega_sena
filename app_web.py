@@ -453,8 +453,8 @@ def buscar_concurso_caixa(numero: int = None) -> Dict:
     return None
 
 
-def buscar_todos_concursos_novos(ultimo_local: int) -> List[Dict]:
-    """Busca todos os concursos novos desde o ultimo local."""
+def buscar_todos_concursos_novos(ultimo_local: int, limite: int = 10) -> List[Dict]:
+    """Busca concursos novos desde o ultimo local (maximo de 'limite' por vez)."""
     novos = []
 
     # Primeiro busca o ultimo concurso para saber ate onde ir
@@ -464,12 +464,16 @@ def buscar_todos_concursos_novos(ultimo_local: int) -> List[Dict]:
 
     ultimo_numero = ultimo.get('numero', 0)
 
-    # Se ja esta atualizado, retorna so o ultimo para verificar
+    # Se ja esta atualizado
     if ultimo_local >= ultimo_numero:
         return []
 
-    # Busca todos os concursos faltantes
-    for num in range(ultimo_local + 1, ultimo_numero + 1):
+    # Limitar quantidade para nao demorar muito
+    inicio = ultimo_local + 1
+    fim = min(ultimo_numero + 1, inicio + limite)
+
+    # Busca concursos faltantes (limitado)
+    for num in range(inicio, fim):
         concurso = buscar_concurso_caixa(num)
         if concurso:
             novos.append(concurso)
