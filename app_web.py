@@ -1021,14 +1021,20 @@ def main():
             st.markdown("#### Frequencia por Dezena")
             todas_freq = [(d, freq.get(d, 0)) for d in range(1, 61)]
             df_todas = pd.DataFrame(todas_freq, columns=['Dezena', 'Frequencia'])
-            st.bar_chart(df_todas.set_index('Dezena'))
+            if df_todas['Frequencia'].sum() > 0:
+                st.bar_chart(df_todas.set_index('Dezena'))
+            else:
+                st.info("Sem dados de frequencia para exibir.")
 
         with col2:
             st.markdown("#### Atraso por Dezena")
             atrasos = analisador.calcular_atrasos()
             todos_atrasos = [(d, atrasos.get(d, 0)) for d in range(1, 61)]
             df_atrasos = pd.DataFrame(todos_atrasos, columns=['Dezena', 'Atraso'])
-            st.bar_chart(df_atrasos.set_index('Dezena'))
+            if df_atrasos['Atraso'].sum() > 0:
+                st.bar_chart(df_atrasos.set_index('Dezena'))
+            else:
+                st.info("Sem dados de atraso para exibir.")
 
     with tab3:
         st.subheader("🔒 Fechamento / Desdobramento")
@@ -1152,7 +1158,10 @@ def main():
                                 {'Acertos': f'{i} acertos', 'Quantidade': resultados['acertos'][i]}
                                 for i in range(7)
                             ])
-                            st.bar_chart(df_acertos.set_index('Acertos'))
+                            if df_acertos['Quantidade'].sum() > 0:
+                                st.bar_chart(df_acertos.set_index('Acertos'))
+                            else:
+                                st.info("Nenhum dado para exibir.")
 
                             # Detalhes de premios
                             if resultados['detalhes']:
