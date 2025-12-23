@@ -51,6 +51,12 @@ export default function MegaSenaApp() {
   const [jogosGerados, setJogosGerados] = useState<number[][]>([])
   const [algoritmosUsados, setAlgoritmosUsados] = useState<string[]>([])
   const [estatisticas, setEstatisticas] = useState<any>(null)
+  const [jogoConferir, setJogoConferir] = useState<string>("")
+  const [resultadoConferencia, setResultadoConferencia] = useState<{
+    jaSaiu: boolean
+    melhorAcerto: number
+    ocorrencias: { concurso: number; data: string; acertos: number }[]
+  } | null>(null)
 
   useEffect(() => {
     carregarDados()
@@ -140,6 +146,25 @@ export default function MegaSenaApp() {
     }
   }
 
+  const conferirJogo = (jogo: number[]) => {
+    if (!concursos.length) return {
+      jaSaiu: false,
+      melhorAcerto: 0,
+      ocorrencias: []
+    }
+    const ocorrencias = concursos.map(c => {
+      const dezenas = [c.dezena1, c.dezena2, c.dezena3, c.dezena4, c.dezena5, c.dezena6]
+      const acertos = jogo.filter(n => dezenas.includes(n)).length
+      return { concurso: c.numero, data: c.data, acertos }
+    }).filter(o => o.acertos > 0)
+
+    const melhorAcerto = ocorrencias.reduce((m, o) => Math.max(m, o.acertos), 0)
+    const jaSaiu = ocorrencias.some(o => o.acertos === 6)
+    const relevantes = ocorrencias.filter(o => o.acertos >= 4).slice(0, 5)
+
+    return { jaSaiu, melhorAcerto, ocorrencias: relevantes }
+  }
+
   const handleInput = (
     value: string,
     addFn: (n: number) => void
@@ -176,7 +201,7 @@ export default function MegaSenaApp() {
               </div>
               <h1 className="text-3xl md:text-4xl font-bold text-white mt-2">
                 Gerador Inteligente - Mega-Sena
-              </h1>
+          </h1>
               <p className="text-emerald-100/80 mt-1">
                 Algoritmos combinados, balanceamento e Supabase integrado
               </p>
@@ -407,8 +432,23 @@ export default function MegaSenaApp() {
                               ))}
                             </div>
                           </div>
-                          <div className="text-xs text-emerald-100/80">
-                            Pares {jogo.filter(n => n % 2 === 0).length} • Ímpares {jogo.filter(n => n % 2 !== 0).length}
+                          <div className="text-xs text-emerald-100/80 space-y-1">
+                            <div>Pares {jogo.filter(n => n % 2 === 0).length} • Ímpares {jogo.filter(n => n % 2 !== 0).length}</div>
+                            {(() => {
+                              const res = conferirJogo(jogo)
+                              return (
+                                <div className="flex items-center gap-2">
+                                  <span className={res.jaSaiu ? "text-emerald-300" : "text-amber-200/90"}>
+                                    {res.jaSaiu ? "Já saiu (Sena!)" : `Melhor acerto: ${res.melhorAcerto}`}
+                                  </span>
+                                  {res.melhorAcerto >= 4 && res.ocorrencias.length > 0 && (
+                                    <span className="text-[11px] text-emerald-100/80">
+                                      #{res.ocorrencias[0].concurso} ({new Date(res.ocorrencias[0].data).toLocaleDateString('pt-BR')})
+                                    </span>
+                                  )}
+                                </div>
+                              )
+                            })()}
                           </div>
                         </div>
                       ))
@@ -480,17 +520,78 @@ export default function MegaSenaApp() {
 
           {/* Meus Jogos */}
           <TabsContent value="jogos" className="mt-6">
-            <Card className="bg-white/5 border-white/10 shadow-lg">
-              <CardHeader>
-                <CardTitle className="text-white">💾 Jogos Salvos</CardTitle>
-                <CardDescription className="text-emerald-100/80">
-                  Seus jogos armazenados na nuvem
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className="text-emerald-100/70 text-sm">Funcionalidade em desenvolvimento...</p>
-              </CardContent>
-            </Card>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <Card className="bg-white/5 border-white/10 shadow-lg">
+                <CardHeader>
+                  <CardTitle className="text-white">💾 Jogos Salvos</CardTitle>
+                  <CardDescription className="text-emerald-100/80">
+                    Seus jogos armazenados na nuvem
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-emerald-100/70 text-sm">Funcionalidade em desenvolvimento...</p>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-white/5 border-white/10 shadow-lg">
+                <CardHeader>
+                  <CardTitle className="text-white">✅ Conferir Jogo</CardTitle>
+                  <CardDescription className="text-emerald-100/80">
+                    Veja se um jogo já saiu ou qual foi o melhor acerto
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <Input
+                    className="bg-white/5 border-white/10 text-white placeholder:text-white/50"
+                    placeholder="Digite 6 números (ex: 01 05 12 23 34 45)"
+                    value={jogoConferir}
+                    onChange={(e) => setJogoConferir(e.target.value)}
+                  />
+                  <Button
+                    className="bg-emerald-500 hover:bg-emerald-600 text-black font-semibold"
+                    onClick={() => {
+                      const nums = jogoConferir
+                        .split(/[\s,]+/)
+                        .map(n => parseInt(n, 10))
+                        .filter(n => n >= 1 && n <= 60)
+                      if (nums.length !== 6) {
+                        alert('Digite 6 números válidos.')
+                        return
+                      }
+                      setResultadoConferencia(conferirJogo(nums.sort((a, b) => a - b)))
+                    }}
+                  >
+                    Conferir
+                  </Button>
+
+                  {resultadoConferencia && (
+                    <div className="p-3 rounded-lg bg-white/5 border border-white/10 text-sm text-emerald-50 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold">Já saiu?</span>
+                        <span className={resultadoConferencia.jaSaiu ? "text-emerald-300" : "text-amber-200/90"}>
+                          {resultadoConferencia.jaSaiu ? "Sim (Sena!)" : "Não"}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold">Melhor acerto:</span>
+                        <span className="text-emerald-200">{resultadoConferencia.melhorAcerto} números</span>
+                      </div>
+                      {resultadoConferencia.ocorrencias.length > 0 && (
+                        <div className="space-y-1">
+                          <div className="font-semibold text-emerald-200/90">Ocorrências (4+ acertos)</div>
+                          {resultadoConferencia.ocorrencias.map((o, i) => (
+                            <div key={i} className="flex justify-between text-emerald-100/80">
+                              <span>#{o.concurso}</span>
+                              <span>{o.acertos} acertos • {new Date(o.data).toLocaleDateString('pt-BR')}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
 
           {/* Config */}
@@ -523,7 +624,7 @@ export default function MegaSenaApp() {
             </Card>
           </TabsContent>
         </Tabs>
-      </div>
+        </div>
     </div>
   )
 }
