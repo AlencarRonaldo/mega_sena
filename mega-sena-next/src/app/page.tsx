@@ -18,7 +18,7 @@ import {
 } from 'recharts'
 import {
   Shuffle, TrendingUp, Clock, Users, Target, CheckCircle,
-  Sparkles, Settings, Database, Activity, Save, Copy
+  Sparkles, Settings, Database, Activity, Save, Copy, Sun, Moon
 } from 'lucide-react'
 import {
   buscarTodosConcursos, buscarUltimoConcurso, salvarJogo, Concurso
@@ -56,6 +56,19 @@ export default function MegaSenaApp() {
     melhorAcerto: number
     ocorrencias: { concurso: number; data: string; acertos: number }[]
   } | null>(null)
+
+  // Tema claro/escuro
+  const [tema, setTema] = useState<'dark' | 'light'>('dark')
+  useEffect(() => {
+    const stored = typeof window !== 'undefined' ? localStorage.getItem('mega_tema') : null
+    if (stored === 'light' || stored === 'dark') setTema(stored)
+  }, [])
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('mega_tema', tema)
+    }
+  }, [tema])
+  const isDark = tema === 'dark'
 
   useEffect(() => {
     carregarDados()
@@ -188,29 +201,48 @@ export default function MegaSenaApp() {
     )
   }
 
+  const bgMain = isDark
+    ? "bg-gradient-to-br from-[#0f1419] via-[#0f1a26] to-[#111827] text-white"
+    : "bg-gradient-to-br from-slate-50 via-white to-slate-100 text-slate-900"
+  const cardClass = isDark ? "bg-white/5 border-white/10 shadow-lg" : "bg-white border border-slate-200 shadow-lg"
+  const inputClass = isDark ? "bg-white/5 border-white/10 text-white placeholder:text-white/50" : "bg-white border-slate-300 text-slate-900 placeholder:text-slate-400"
+  const badgeHighlight = isDark ? "bg-emerald-500/20 text-emerald-100" : "bg-emerald-100 text-emerald-800"
+  const sliderClass = "w-full accent-emerald-400 h-2 rounded-lg " + (isDark ? "bg-white/10" : "bg-emerald-100")
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0f1419] via-[#0f1a26] to-[#111827] text-white">
+    <div className={`min-h-screen ${bgMain}`}>
       <div className="max-w-6xl mx-auto px-4 py-8">
         {/* Hero */}
-        <div className="mb-8 rounded-2xl bg-white/5 border border-white/10 shadow-xl backdrop-blur-lg p-6">
+        <div className={`mb-8 rounded-2xl ${cardClass} shadow-xl backdrop-blur-lg p-6`}>
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2 text-emerald-300 text-sm font-semibold">
-                <Sparkles className="w-4 h-4" /> Premium Dark
+                <Sparkles className="w-4 h-4" /> {isDark ? "Premium Dark" : "Tema Claro"}
               </div>
-              <h1 className="text-3xl md:text-4xl font-bold text-white mt-2">
+              <h1 className={`text-3xl md:text-4xl font-bold mt-2 ${isDark ? "text-white" : "text-slate-900"}`}>
                 Gerador Inteligente - Mega-Sena
           </h1>
-              <p className="text-emerald-100/80 mt-1">
+              <p className={isDark ? "text-emerald-100/80 mt-1" : "text-slate-600 mt-1"}>
                 Algoritmos combinados, balanceamento e Supabase integrado
               </p>
             </div>
 
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                className={isDark ? "border-white/20 text-white" : "border-slate-300 text-slate-800"}
+                onClick={() => setTema(isDark ? 'light' : 'dark')}
+              >
+                {isDark ? <Sun className="w-4 h-4 mr-1" /> : <Moon className="w-4 h-4 mr-1" />}
+                {isDark ? "Tema claro" : "Tema escuro"}
+              </Button>
+            </div>
+
             {ultimoConcurso && (
-              <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-3">
-                <div className="text-sm text-emerald-200">Último concurso</div>
-                <div className="text-2xl font-bold text-white">#{ultimoConcurso.numero}</div>
-                <div className="text-xs text-emerald-100/80">
+              <div className={`rounded-xl border border-emerald-500/40 ${isDark ? "bg-emerald-500/10" : "bg-emerald-50"} px-4 py-3`}>
+                <div className={`text-sm ${isDark ? "text-emerald-200" : "text-emerald-700"}`}>Último concurso</div>
+                <div className={`text-2xl font-bold ${isDark ? "text-white" : "text-emerald-800"}`}>#{ultimoConcurso.numero}</div>
+                <div className={`text-xs ${isDark ? "text-emerald-100/80" : "text-emerald-700/80"}`}>
                   {new Date(ultimoConcurso.data).toLocaleDateString('pt-BR')}
                 </div>
                 <div className="flex gap-2 mt-2 flex-wrap">
@@ -228,7 +260,7 @@ export default function MegaSenaApp() {
             )}
           </div>
 
-          <div className="mt-4 flex flex-wrap gap-3 text-sm text-emerald-100/80">
+          <div className={`mt-4 flex flex-wrap gap-3 text-sm ${isDark ? "text-emerald-100/80" : "text-slate-700"}`}>
             <div className="flex items-center gap-2">
               <CheckCircle className="w-4 h-4 text-emerald-400" />
               Supabase conectado ({concursos.length} concursos)
@@ -245,7 +277,7 @@ export default function MegaSenaApp() {
         </div>
 
         <Tabs defaultValue="gerar" className="w-full">
-          <TabsList className="grid w-full grid-cols-4 bg-white/5 text-emerald-100 border border-white/10">
+          <TabsList className={`grid w-full grid-cols-4 ${isDark ? "bg-white/5 text-emerald-100 border border-white/10" : "bg-white text-emerald-700 border border-slate-200"}`}>
             <TabsTrigger value="gerar">🎰 Gerar Jogos</TabsTrigger>
             <TabsTrigger value="estatisticas">📊 Estatísticas</TabsTrigger>
             <TabsTrigger value="jogos">💾 Meus Jogos</TabsTrigger>
@@ -257,18 +289,18 @@ export default function MegaSenaApp() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Config */}
               <div className="space-y-4">
-                <Card className="bg-white/5 border-white/10 shadow-lg">
+                <Card className={cardClass}>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <Target className="w-5 h-5 text-emerald-400" />
                       Configurações
                     </CardTitle>
-                    <CardDescription>Controle fino dos algoritmos</CardDescription>
+                    <CardDescription className={isDark ? "" : "text-slate-600"}>Controle fino dos algoritmos</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="space-y-2">
                       <div className="flex items-center justify-between text-sm">
-                        <Label className="text-emerald-50">Anos de análise</Label>
+                        <Label className={isDark ? "text-emerald-50" : "text-slate-700"}>Anos de análise</Label>
                         <div className="flex items-center gap-2">
                           <Input
                             type="number"
@@ -279,9 +311,9 @@ export default function MegaSenaApp() {
                               const v = Math.min(10, Math.max(1, Number(e.target.value) || 1))
                               setAnosAnalise([v])
                             }}
-                            className="w-16 h-9 bg-white/5 border-white/20 text-white text-sm"
+                            className={`w-16 h-9 text-sm ${inputClass}`}
                           />
-                          <span className="px-2 py-1 rounded-md bg-emerald-500/20 text-emerald-100 font-semibold">
+                          <span className={`px-2 py-1 rounded-md font-semibold ${badgeHighlight}`}>
                             {anosAnalise[0]}
                           </span>
                         </div>
@@ -293,12 +325,12 @@ export default function MegaSenaApp() {
                         step={1}
                         value={anosAnalise[0]}
                         onChange={(e) => setAnosAnalise([Number(e.target.value)])}
-                        className="w-full accent-emerald-400 h-2 rounded-lg bg-white/10"
+                        className={sliderClass}
                       />
                     </div>
                     <div className="space-y-2">
                       <div className="flex items-center justify-between text-sm">
-                        <Label className="text-emerald-50">Quantidade de jogos</Label>
+                        <Label className={isDark ? "text-emerald-50" : "text-slate-700"}>Quantidade de jogos</Label>
                         <div className="flex items-center gap-2">
                           <Input
                             type="number"
@@ -309,9 +341,9 @@ export default function MegaSenaApp() {
                               const v = Math.min(20, Math.max(1, Number(e.target.value) || 1))
                               setQuantidadeJogos(v)
                             }}
-                            className="w-16 h-9 bg-white/5 border-white/20 text-white text-sm"
+                            className={`w-16 h-9 text-sm ${inputClass}`}
                           />
-                          <span className="px-2 py-1 rounded-md bg-emerald-500/20 text-emerald-100 font-semibold">
+                          <span className={`px-2 py-1 rounded-md font-semibold ${badgeHighlight}`}>
                             {quantidadeJogos}
                           </span>
                         </div>
@@ -323,12 +355,12 @@ export default function MegaSenaApp() {
                         step={1}
                         value={quantidadeJogos}
                         onChange={(e) => setQuantidadeJogos(Number(e.target.value))}
-                        className="w-full accent-emerald-400 h-2 rounded-lg bg-white/10"
+                        className={sliderClass}
                       />
                     </div>
                     <Separator className="bg-white/10" />
                     <div className="space-y-3">
-                      <Label className="text-emerald-100 text-sm">Algoritmos</Label>
+                      <Label className={isDark ? "text-emerald-100 text-sm" : "text-slate-700 text-sm"}>Algoritmos</Label>
                       {[
                         { id: 'freq', label: 'Frequência', icon: <TrendingUp className="w-4 h-4" />, key: 'frequencia' },
                         { id: 'markov', label: 'Markov', icon: <Shuffle className="w-4 h-4" />, key: 'markov' },
@@ -346,7 +378,7 @@ export default function MegaSenaApp() {
                               [item.key]: checked as boolean
                             })}
                           />
-                          <Label htmlFor={item.id} className="flex items-center gap-2 text-sm">
+                          <Label htmlFor={item.id} className={`flex items-center gap-2 text-sm ${isDark ? "text-emerald-50" : "text-slate-800"}`}>
                             {item.icon} {item.label}
                           </Label>
                         </div>
@@ -420,22 +452,22 @@ export default function MegaSenaApp() {
 
               {/* Resultados */}
               <div className="lg:col-span-2 space-y-4">
-                <Card className="bg-white/5 border-white/10 shadow-lg">
+                <Card className={cardClass}>
                   <CardHeader>
                     <div className="flex items-start justify-between">
                       <div>
-                        <CardTitle className="text-white">Jogos Gerados</CardTitle>
-                        <CardDescription className="text-emerald-100/80">
+                        <CardTitle className={isDark ? "text-white" : "text-slate-900"}>Jogos Gerados</CardTitle>
+                        <CardDescription className={isDark ? "text-emerald-100/80" : "text-slate-600"}>
                           {jogosGerados.length} jogos • Algoritmos: {algoritmosAtivos.join(', ')}
                         </CardDescription>
                       </div>
                       <div className="flex gap-2">
-                        <Button variant="outline" className="border-emerald-400/60 text-emerald-100" onClick={salvarJogos}>
+                        <Button variant="outline" className={isDark ? "border-emerald-400/60 text-emerald-100" : "border-emerald-300 text-emerald-700"} onClick={salvarJogos}>
                           <Save className="w-4 h-4 mr-1" /> Salvar
                         </Button>
                         <Button
                           variant="outline"
-                          className="border-emerald-400/60 text-emerald-100"
+                          className={isDark ? "border-emerald-400/60 text-emerald-100" : "border-emerald-300 text-emerald-700"}
                           onClick={() => {
                             if (jogosGerados.length === 0) return
                             const text = jogosGerados.map((jogo, idx) => `Jogo ${idx + 1}: ${jogo.join(' ')}`).join('\n')
@@ -452,34 +484,34 @@ export default function MegaSenaApp() {
                       jogosGerados.map((jogo, idx) => (
                         <div
                           key={idx}
-                          className="p-4 rounded-xl bg-white/5 border border-white/10 flex items-center justify-between flex-wrap gap-3"
+                          className={`p-4 rounded-xl flex items-center justify-between flex-wrap gap-3 ${isDark ? "bg-white/5 border border-white/10" : "bg-slate-50 border border-slate-200"}`}
                         >
                           <div className="flex items-center gap-3">
-                            <Badge className="bg-emerald-500/20 border-emerald-400/50 text-emerald-100">
+                            <Badge className={isDark ? "bg-emerald-500/20 border-emerald-400/50 text-emerald-100" : "bg-emerald-100 border-emerald-300 text-emerald-800"}>
                               {algoritmosUsados[idx] || 'Misto'}
                             </Badge>
                             <div className="flex gap-2 flex-wrap">
                               {jogo.map((num) => (
                                 <div
                                   key={num}
-                                  className="w-9 h-9 bg-gradient-to-br from-emerald-500 to-green-400 text-black font-semibold rounded-full flex items-center justify-center shadow-md"
+                                  className={`w-9 h-9 bg-gradient-to-br from-emerald-500 to-green-400 ${isDark ? "text-black" : "text-emerald-950"} font-semibold rounded-full flex items-center justify-center shadow-md`}
                                 >
                                   {num.toString().padStart(2, '0')}
                                 </div>
                               ))}
                             </div>
                           </div>
-                          <div className="text-xs text-emerald-100/80 space-y-1">
+                          <div className={`text-xs space-y-1 ${isDark ? "text-emerald-100/80" : "text-slate-600"}`}>
                             <div>Pares {jogo.filter(n => n % 2 === 0).length} • Ímpares {jogo.filter(n => n % 2 !== 0).length}</div>
                             {(() => {
                               const res = conferirJogo(jogo)
                               return (
                                 <div className="flex items-center gap-2">
-                                  <span className={res.jaSaiu ? "text-emerald-300" : "text-amber-200/90"}>
+                                  <span className={res.jaSaiu ? (isDark ? "text-emerald-400" : "text-emerald-700") : (isDark ? "text-amber-200/90" : "text-amber-600")}>
                                     {res.jaSaiu ? "Já saiu (Sena!)" : `Melhor acerto: ${res.melhorAcerto}`}
                                   </span>
                                   {res.melhorAcerto >= 4 && res.ocorrencias.length > 0 && (
-                                    <span className="text-[11px] text-emerald-100/80">
+                                    <span className={`text-[11px] ${isDark ? "text-emerald-100/80" : "text-slate-600"}`}>
                                       #{res.ocorrencias[0].concurso} ({new Date(res.ocorrencias[0].data).toLocaleDateString('pt-BR')})
                                     </span>
                                   )}
@@ -490,8 +522,8 @@ export default function MegaSenaApp() {
                         </div>
                       ))
                     ) : (
-                      <div className="text-center py-10 text-emerald-100/70">
-                        <Shuffle className="w-10 h-10 mx-auto mb-3 opacity-70" />
+                      <div className={`text-center py-10 ${isDark ? "text-emerald-100/70" : "text-slate-600"}`}>
+                        <Shuffle className="w-10 h-10 mx-auto mb-3 opacity-70 text-emerald-400" />
                         Clique em “Gerar Jogos” para começar
                       </div>
                     )}
@@ -505,14 +537,14 @@ export default function MegaSenaApp() {
           <TabsContent value="estatisticas" className="mt-6 space-y-6">
             {estatisticas && (
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <Card className="bg-white/5 border-white/10 shadow-lg lg:col-span-1">
+                <Card className={`${cardClass} lg:col-span-1`}>
                   <CardHeader>
-                    <CardTitle className="text-white">🔥 Top Frequentes</CardTitle>
-                    <CardDescription className="text-emerald-100/80">6 números mais sorteados</CardDescription>
+                    <CardTitle className={isDark ? "text-white" : "text-slate-900"}>🔥 Top Frequentes</CardTitle>
+                    <CardDescription className={isDark ? "text-emerald-100/80" : "text-slate-600"}>6 números mais sorteados</CardDescription>
                   </CardHeader>
-                  <CardContent className="space-y-2">
+                  <CardContent className="space-y-2 text-sm">
                     {estatisticas.topFrequentes.map((item: any) => (
-                      <div key={item.dezena} className="flex justify-between text-emerald-50">
+                      <div key={item.dezena} className={`flex justify-between ${isDark ? "text-emerald-50" : "text-slate-700"}`}>
                         <span className="font-mono text-sm">{item.dezena.toString().padStart(2, '0')}</span>
                         <span className="font-semibold">{item.frequencia}x</span>
                       </div>
@@ -520,14 +552,14 @@ export default function MegaSenaApp() {
                   </CardContent>
                 </Card>
 
-                <Card className="bg-white/5 border-white/10 shadow-lg lg:col-span-1">
+                <Card className={`${cardClass} lg:col-span-1`}>
                   <CardHeader>
-                    <CardTitle className="text-white">❄️ Top Atrasados</CardTitle>
-                    <CardDescription className="text-emerald-100/80">6 números mais atrasados</CardDescription>
+                    <CardTitle className={isDark ? "text-white" : "text-slate-900"}>❄️ Top Atrasados</CardTitle>
+                    <CardDescription className={isDark ? "text-emerald-100/80" : "text-slate-600"}>6 números mais atrasados</CardDescription>
                   </CardHeader>
-                  <CardContent className="space-y-2">
+                  <CardContent className="space-y-2 text-sm">
                     {estatisticas.topAtrasados.map((item: any) => (
-                      <div key={item.dezena} className="flex justify-between text-emerald-50">
+                      <div key={item.dezena} className={`flex justify-between ${isDark ? "text-emerald-50" : "text-slate-700"}`}>
                         <span className="font-mono text-sm">{item.dezena.toString().padStart(2, '0')}</span>
                         <span className="font-semibold">{item.atraso} sorteios</span>
                       </div>
@@ -535,17 +567,17 @@ export default function MegaSenaApp() {
                   </CardContent>
                 </Card>
 
-                <Card className="bg-white/5 border-white/10 shadow-lg lg:col-span-3">
+                <Card className={`${cardClass} lg:col-span-3`}>
                   <CardHeader>
-                    <CardTitle className="text-white">📊 Frequência por Número</CardTitle>
+                    <CardTitle className={isDark ? "text-white" : "text-slate-900"}>📊 Frequência por Número</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <ResponsiveContainer width="100%" height={300}>
                       <BarChart data={estatisticas.frequenciasChart}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-                        <XAxis dataKey="dezena" stroke="#9ca3af" />
-                        <YAxis stroke="#9ca3af" />
-                        <Tooltip contentStyle={{ background: '#0f172a', border: '1px solid #10b981', color: 'white' }} />
+                        <CartesianGrid strokeDasharray="3 3" stroke={isDark ? "#1f2937" : "#e5e7eb"} />
+                        <XAxis dataKey="dezena" stroke={isDark ? "#9ca3af" : "#4b5563"} />
+                        <YAxis stroke={isDark ? "#9ca3af" : "#4b5563"} />
+                        <Tooltip contentStyle={isDark ? { background: '#0f172a', border: '1px solid #10b981', color: 'white' } : { background: '#ffffff', border: '1px solid #10b981', color: '#0f172a' }} />
                         <Bar dataKey="frequencia" fill="#10b981" />
                       </BarChart>
                     </ResponsiveContainer>
@@ -558,34 +590,34 @@ export default function MegaSenaApp() {
           {/* Meus Jogos */}
           <TabsContent value="jogos" className="mt-6">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <Card className="bg-white/5 border-white/10 shadow-lg">
+              <Card className={cardClass}>
                 <CardHeader>
-                  <CardTitle className="text-white">💾 Jogos Salvos</CardTitle>
-                  <CardDescription className="text-emerald-100/80">
+                  <CardTitle className={isDark ? "text-white" : "text-slate-900"}>💾 Jogos Salvos</CardTitle>
+                  <CardDescription className={isDark ? "text-emerald-100/80" : "text-slate-600"}>
                     Seus jogos armazenados na nuvem
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-emerald-100/70 text-sm">Funcionalidade em desenvolvimento...</p>
+                  <p className={isDark ? "text-emerald-100/70 text-sm" : "text-slate-600 text-sm"}>Funcionalidade em desenvolvimento...</p>
                 </CardContent>
               </Card>
 
-              <Card className="bg-white/5 border-white/10 shadow-lg">
+              <Card className={cardClass}>
                 <CardHeader>
-                  <CardTitle className="text-white">✅ Conferir Jogo</CardTitle>
-                  <CardDescription className="text-emerald-100/80">
+                  <CardTitle className={isDark ? "text-white" : "text-slate-900"}>✅ Conferir Jogo</CardTitle>
+                  <CardDescription className={isDark ? "text-emerald-100/80" : "text-slate-600"}>
                     Veja se um jogo já saiu ou qual foi o melhor acerto
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <Input
-                    className="bg-white/5 border-white/10 text-white placeholder:text-white/50"
+                    className={inputClass}
                     placeholder="Digite 6 números (ex: 01 05 12 23 34 45)"
                     value={jogoConferir}
                     onChange={(e) => setJogoConferir(e.target.value)}
                   />
                   <Button
-                    className="bg-emerald-500 hover:bg-emerald-600 text-black font-semibold"
+                    className={`font-semibold ${isDark ? "bg-emerald-500 hover:bg-emerald-600 text-black" : "bg-emerald-500 hover:bg-emerald-600 text-white"}`}
                     onClick={() => {
                       const nums = jogoConferir
                         .split(/[\s,]+/)
@@ -602,22 +634,22 @@ export default function MegaSenaApp() {
                   </Button>
 
                   {resultadoConferencia && (
-                    <div className="p-3 rounded-lg bg-white/5 border border-white/10 text-sm text-emerald-50 space-y-2">
+                    <div className={`p-3 rounded-lg text-sm space-y-2 ${isDark ? "bg-white/5 border border-white/10 text-emerald-50" : "bg-slate-50 border border-slate-200 text-slate-800"}`}>
                       <div className="flex items-center gap-2">
                         <span className="font-semibold">Já saiu?</span>
-                        <span className={resultadoConferencia.jaSaiu ? "text-emerald-300" : "text-amber-200/90"}>
+                        <span className={resultadoConferencia.jaSaiu ? (isDark ? "text-emerald-300" : "text-emerald-700") : (isDark ? "text-amber-200/90" : "text-amber-600")}>
                           {resultadoConferencia.jaSaiu ? "Sim (Sena!)" : "Não"}
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="font-semibold">Melhor acerto:</span>
-                        <span className="text-emerald-200">{resultadoConferencia.melhorAcerto} números</span>
+                        <span className={isDark ? "text-emerald-200" : "text-emerald-700"}>{resultadoConferencia.melhorAcerto} números</span>
                       </div>
                       {resultadoConferencia.ocorrencias.length > 0 && (
                         <div className="space-y-1">
-                          <div className="font-semibold text-emerald-200/90">Ocorrências (4+ acertos)</div>
+                          <div className={isDark ? "font-semibold text-emerald-200/90" : "font-semibold text-emerald-700"}>Ocorrências (4+ acertos)</div>
                           {resultadoConferencia.ocorrencias.map((o, i) => (
-                            <div key={i} className="flex justify-between text-emerald-100/80">
+                            <div key={i} className={`flex justify-between ${isDark ? "text-emerald-100/80" : "text-slate-700"}`}>
                               <span>#{o.concurso}</span>
                               <span>{o.acertos} acertos • {new Date(o.data).toLocaleDateString('pt-BR')}</span>
                             </div>
@@ -633,24 +665,24 @@ export default function MegaSenaApp() {
 
           {/* Config */}
           <TabsContent value="config" className="mt-6">
-            <Card className="bg-white/5 border-white/10 shadow-lg">
+            <Card className={cardClass}>
               <CardHeader>
-                <CardTitle className="text-white">⚙️ Configurações do Sistema</CardTitle>
+                <CardTitle className={isDark ? "text-white" : "text-slate-900"}>⚙️ Configurações do Sistema</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4 text-emerald-50">
+              <CardContent className={`space-y-4 ${isDark ? "text-emerald-50" : "text-slate-800"}`}>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="p-3 rounded-lg bg-white/5 border border-white/10">
-                    <div className="text-sm text-emerald-100/70">Total de Concursos</div>
-                    <div className="text-2xl font-bold text-white">{concursos.length}</div>
+                  <div className={`p-3 rounded-lg ${isDark ? "bg-white/5 border border-white/10" : "bg-slate-50 border border-slate-200"}`}>
+                    <div className="text-sm text-emerald-500/90">Total de Concursos</div>
+                    <div className={`text-2xl font-bold ${isDark ? "text-white" : "text-slate-900"}`}>{concursos.length}</div>
                   </div>
-                  <div className="p-3 rounded-lg bg-white/5 border border-white/10">
-                    <div className="text-sm text-emerald-100/70">Status Supabase</div>
-                    <div className="flex items-center gap-2 text-emerald-400 font-semibold">
+                  <div className={`p-3 rounded-lg ${isDark ? "bg-white/5 border border-white/10" : "bg-slate-50 border border-slate-200"}`}>
+                    <div className="text-sm text-emerald-500/90">Status Supabase</div>
+                    <div className="flex items-center gap-2 text-emerald-500 font-semibold">
                       <CheckCircle className="w-4 h-4" /> Conectado
                     </div>
                   </div>
-                  <div className="p-3 rounded-lg bg-white/5 border border-white/10">
-                    <div className="text-sm text-emerald-100/70">Período de Dados</div>
+                  <div className={`p-3 rounded-lg ${isDark ? "bg-white/5 border border-white/10" : "bg-slate-50 border border-slate-200"}`}>
+                    <div className="text-sm text-emerald-500/90">Período de Dados</div>
                     <div className="text-sm">
                       {concursos.length > 0 &&
                         `${new Date(concursos[0].data).toLocaleDateString('pt-BR')} - ${new Date(concursos[concursos.length - 1].data).toLocaleDateString('pt-BR')}`}
