@@ -268,7 +268,12 @@ export default function MegaSenaApp() {
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div>
-                      <Label className="text-emerald-100">Anos de análise: {anosAnalise[0]}</Label>
+                      <div className="flex items-center justify-between text-sm">
+                        <Label className="text-emerald-50">Anos de análise</Label>
+                        <span className="px-2 py-1 rounded-md bg-emerald-500/20 text-emerald-100 font-semibold">
+                          {anosAnalise[0]}
+                        </span>
+                      </div>
                       <Slider
                         value={anosAnalise}
                         onValueChange={setAnosAnalise}
@@ -279,7 +284,12 @@ export default function MegaSenaApp() {
                       />
                     </div>
                     <div>
-                      <Label className="text-emerald-100">Quantidade de jogos: {quantidadeJogos}</Label>
+                      <div className="flex items-center justify-between text-sm">
+                        <Label className="text-emerald-50">Quantidade de jogos</Label>
+                        <span className="px-2 py-1 rounded-md bg-emerald-500/20 text-emerald-100 font-semibold">
+                          {quantidadeJogos}
+                        </span>
+                      </div>
                       <Slider
                         value={[quantidadeJogos]}
                         onValueChange={(v) => setQuantidadeJogos(v[0])}
