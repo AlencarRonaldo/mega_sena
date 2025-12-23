@@ -10,7 +10,6 @@ import {
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
-import { Slider } from '@/components/ui/slider'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
@@ -287,13 +286,14 @@ export default function MegaSenaApp() {
                           </span>
                         </div>
                       </div>
-                      <Slider
-                        value={anosAnalise}
-                        onValueChange={setAnosAnalise}
-                        max={10}
+                      <input
+                        type="range"
                         min={1}
+                        max={10}
                         step={1}
-                        className="mt-1"
+                        value={anosAnalise[0]}
+                        onChange={(e) => setAnosAnalise([Number(e.target.value)])}
+                        className="w-full accent-emerald-400 h-2 rounded-lg bg-white/10"
                       />
                     </div>
                     <div className="space-y-2">
@@ -316,13 +316,14 @@ export default function MegaSenaApp() {
                           </span>
                         </div>
                       </div>
-                      <Slider
-                        value={[quantidadeJogos]}
-                        onValueChange={(v) => setQuantidadeJogos(v[0])}
-                        max={20}
+                      <input
+                        type="range"
                         min={1}
+                        max={20}
                         step={1}
-                        className="mt-1"
+                        value={quantidadeJogos}
+                        onChange={(e) => setQuantidadeJogos(Number(e.target.value))}
+                        className="w-full accent-emerald-400 h-2 rounded-lg bg-white/10"
                       />
                     </div>
                     <Separator className="bg-white/10" />
