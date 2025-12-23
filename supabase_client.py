@@ -14,11 +14,14 @@ from supabase import create_client, Client
 # URL da API da Caixa
 API_CAIXA_URL = "https://servicebus2.caixa.gov.br/portaldeloterias/api/megasena"
 
-# Carregar variaveis de ambiente
-load_dotenv()
-
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+# Carregar configurações
+try:
+    from config import SUPABASE_URL, SUPABASE_KEY
+except ImportError:
+    # Fallback para variáveis de ambiente
+    load_dotenv()
+    SUPABASE_URL = os.getenv("SUPABASE_URL")
+    SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 
 def get_supabase_client() -> Client:
