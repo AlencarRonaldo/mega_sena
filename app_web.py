@@ -18,6 +18,8 @@ import io
 import itertools
 import json
 import random
+import time
+import os
 from collections import defaultdict
 from dataclasses import dataclass, asdict
 from pathlib import Path
@@ -26,6 +28,33 @@ import requests
 
 import pandas as pd
 import streamlit as st
+
+# Importar cliente Supabase
+from supabase_client import (
+    buscar_todos_concursos,
+    buscar_concursos_ultimo_ano,
+    buscar_ultimo_concurso as buscar_ultimo_concurso_db,
+    buscar_jogos_salvos as buscar_jogos_salvos_db,
+    salvar_jogo as salvar_jogo_db,
+    salvar_jogos_em_lote,
+    deletar_jogo as deletar_jogo_db,
+    deletar_todos_jogos,
+    conferir_jogo_no_banco,
+    sincronizar_com_caixa,
+    verificar_atualizacao,
+    contar_concursos,
+)
+
+# Importar estilos premium
+from styles import (
+    get_premium_styles,
+    criar_bola_html,
+    criar_bolas_jogo,
+    criar_header_premium,
+    criar_kpi_card,
+    criar_volante_premium,
+    criar_game_card,
+)
 
 # Constantes
 DEZENA_MIN = 1
@@ -230,11 +259,350 @@ class AnalisadorMegaSena:
 
         return resultados
 
+    # ============== ANÁLISES ESTATÍSTICAS AVANÇADAS ==============
+
+    def probabilidades_reais(self) -> Dict[str, Dict]:
+        """Calcula probabilidades reais da Mega-Sena."""
+        from math import comb
+
+        total_combinacoes = comb(60, 6)  # 50.063.860
+
+        return {
+            'sena': {
+                'chance': 1,
+                'total': total_combinacoes,
+                'probabilidade': 1 / total_combinacoes,
+                'percentual': (1 / total_combinacoes) * 100,
+                'texto': f"1 em {total_combinacoes:,}".replace(',', '.')
+            },
+            'quina': {
+                'chance': comb(6, 5) * comb(54, 1),
+                'total': total_combinacoes,
+                'probabilidade': (comb(6, 5) * comb(54, 1)) / total_combinacoes,
+                'percentual': ((comb(6, 5) * comb(54, 1)) / total_combinacoes) * 100,
+                'texto': f"1 em {total_combinacoes // (comb(6, 5) * comb(54, 1)):,}".replace(',', '.')
+            },
+            'quadra': {
+                'chance': comb(6, 4) * comb(54, 2),
+                'total': total_combinacoes,
+                'probabilidade': (comb(6, 4) * comb(54, 2)) / total_combinacoes,
+                'percentual': ((comb(6, 4) * comb(54, 2)) / total_combinacoes) * 100,
+                'texto': f"1 em {total_combinacoes // (comb(6, 4) * comb(54, 2)):,}".replace(',', '.')
+            }
+        }
+
+    def analise_soma(self) -> Dict[str, any]:
+        """Analisa a soma dos números sorteados."""
+        somas = [sum(c.dezenas) for c in self.concursos]
+
+        if not somas:
+            return {'media': 0, 'min': 0, 'max': 0, 'faixa_ideal': (0, 0)}
+
+        media = sum(somas) / len(somas)
+        desvio = (sum((s - media) ** 2 for s in somas) / len(somas)) ** 0.5
+
+        # Faixa ideal = média ± 1 desvio padrão
+        faixa_min = int(media - desvio)
+        faixa_max = int(media + desvio)
+
+        # Distribuição por faixas
+        faixas = {'< 150': 0, '150-175': 0, '176-200': 0, '201-225': 0, '> 225': 0}
+        for s in somas:
+            if s < 150:
+                faixas['< 150'] += 1
+            elif s <= 175:
+                faixas['150-175'] += 1
+            elif s <= 200:
+                faixas['176-200'] += 1
+            elif s <= 225:
+                faixas['201-225'] += 1
+            else:
+                faixas['> 225'] += 1
+
+        return {
+            'media': round(media, 1),
+            'min': min(somas),
+            'max': max(somas),
+            'desvio': round(desvio, 1),
+            'faixa_ideal': (faixa_min, faixa_max),
+            'distribuicao': faixas,
+            'historico': somas[-50:]  # Últimas 50
+        }
+
+    def analise_padroes(self) -> Dict[str, any]:
+        """Analisa padrões nos sorteios."""
+        consecutivos = 0
+        mesmo_final = 0
+        repetidos_anterior = 0
+
+        for i, c in enumerate(self.concursos):
+            dezenas = sorted(c.dezenas)
+
+            # Consecutivos
+            for j in range(len(dezenas) - 1):
+                if dezenas[j + 1] - dezenas[j] == 1:
+                    consecutivos += 1
+
+            # Mesmo final
+            finais = [d % 10 for d in dezenas]
+            if len(finais) != len(set(finais)):
+                mesmo_final += 1
+
+            # Repetidos do anterior
+            if i > 0:
+                anterior = set(self.concursos[i - 1].dezenas)
+                atual = set(dezenas)
+                if anterior & atual:
+                    repetidos_anterior += 1
+
+        total = len(self.concursos)
+        return {
+            'consecutivos': {
+                'total': consecutivos,
+                'media_por_sorteio': round(consecutivos / total, 2) if total > 0 else 0,
+                'percentual': round((consecutivos / (total * 5)) * 100, 1) if total > 0 else 0
+            },
+            'mesmo_final': {
+                'total': mesmo_final,
+                'percentual': round((mesmo_final / total) * 100, 1) if total > 0 else 0
+            },
+            'repetidos': {
+                'total': repetidos_anterior,
+                'percentual': round((repetidos_anterior / total) * 100, 1) if total > 0 else 0
+            }
+        }
+
+    def ciclos_atraso(self) -> Dict[int, Dict]:
+        """Calcula ciclos médios de atraso para cada número."""
+        aparicoes = {d: [] for d in range(1, 61)}
+
+        for i, c in enumerate(self.concursos):
+            for d in c.dezenas:
+                aparicoes[d].append(i)
+
+        ciclos = {}
+        for d in range(1, 61):
+            pos = aparicoes[d]
+            if len(pos) >= 2:
+                intervalos = [pos[i + 1] - pos[i] for i in range(len(pos) - 1)]
+                media = sum(intervalos) / len(intervalos)
+                ciclos[d] = {
+                    'media': round(media, 1),
+                    'min': min(intervalos),
+                    'max': max(intervalos),
+                    'ultimo_atraso': len(self.concursos) - 1 - pos[-1] if pos else 0,
+                    'aparicoes': len(pos)
+                }
+            else:
+                ciclos[d] = {
+                    'media': 0,
+                    'min': 0,
+                    'max': 0,
+                    'ultimo_atraso': len(self.concursos) if not pos else len(self.concursos) - 1 - pos[-1],
+                    'aparicoes': len(pos)
+                }
+
+        return ciclos
+
+    def analise_quadrantes(self) -> Dict[str, any]:
+        """Analisa distribuição por quadrantes (faixas de 15)."""
+        quadrantes = {
+            '01-15': 0,
+            '16-30': 0,
+            '31-45': 0,
+            '46-60': 0
+        }
+
+        distribuicoes = []
+
+        for c in self.concursos:
+            dist = [0, 0, 0, 0]
+            for d in c.dezenas:
+                if d <= 15:
+                    quadrantes['01-15'] += 1
+                    dist[0] += 1
+                elif d <= 30:
+                    quadrantes['16-30'] += 1
+                    dist[1] += 1
+                elif d <= 45:
+                    quadrantes['31-45'] += 1
+                    dist[2] += 1
+                else:
+                    quadrantes['46-60'] += 1
+                    dist[3] += 1
+            distribuicoes.append(tuple(dist))
+
+        # Padrão mais comum
+        from collections import Counter
+        padroes = Counter(distribuicoes)
+        mais_comum = padroes.most_common(5)
+
+        total = sum(quadrantes.values())
+        percentuais = {k: round((v / total) * 100, 1) if total > 0 else 0 for k, v in quadrantes.items()}
+
+        return {
+            'contagem': quadrantes,
+            'percentuais': percentuais,
+            'padroes_comuns': mais_comum,
+            'ideal': [1, 2, 2, 1]  # Distribuição ideal sugerida
+        }
+
+    def simulacao_monte_carlo(self, num_simulacoes: int = 10000) -> Dict[str, any]:
+        """Simula milhares de jogos para calcular ROI esperado."""
+        import random
+
+        # Probabilidades reais
+        prob = self.probabilidades_reais()
+
+        # Valores dos prêmios (médios)
+        premios = {
+            6: 50_000_000,  # Sena média
+            5: 50_000,       # Quina média
+            4: 1_000         # Quadra média
+        }
+
+        custo_jogo = 5.00
+        ganhos_total = 0
+        acertos = {4: 0, 5: 0, 6: 0}
+
+        # Simular
+        rng = random.Random()
+        for _ in range(num_simulacoes):
+            # Gerar jogo aleatório
+            jogo = set(rng.sample(range(1, 61), 6))
+
+            # Gerar resultado aleatório
+            resultado = set(rng.sample(range(1, 61), 6))
+
+            # Conferir
+            hits = len(jogo & resultado)
+            if hits >= 4:
+                acertos[hits] += 1
+                ganhos_total += premios.get(hits, 0)
+
+        custo_total = num_simulacoes * custo_jogo
+        roi = ((ganhos_total - custo_total) / custo_total) * 100 if custo_total > 0 else 0
+
+        return {
+            'simulacoes': num_simulacoes,
+            'custo_total': custo_total,
+            'ganhos_total': ganhos_total,
+            'lucro': ganhos_total - custo_total,
+            'roi': round(roi, 2),
+            'acertos': acertos,
+            'quadras_esperadas': round(num_simulacoes * prob['quadra']['probabilidade'], 2),
+            'quinas_esperadas': round(num_simulacoes * prob['quina']['probabilidade'], 4),
+            'senas_esperadas': round(num_simulacoes * prob['sena']['probabilidade'], 8)
+        }
+
+    def indice_confianca(self, dezenas: List[int]) -> Dict[str, any]:
+        """Calcula índice de confiança para um jogo."""
+        score = 0
+        fatores = {}
+
+        # 1. Frequência (0-20 pontos)
+        freq = self.calcular_frequencias()
+        media_freq = sum(freq.values()) / 60 if freq else 0
+        freq_jogo = sum(freq.get(d, 0) for d in dezenas) / 6
+        fator_freq = min(20, (freq_jogo / media_freq) * 10) if media_freq > 0 else 10
+        score += fator_freq
+        fatores['frequencia'] = round(fator_freq, 1)
+
+        # 2. Soma ideal (0-20 pontos)
+        soma_analise = self.analise_soma()
+        soma_jogo = sum(dezenas)
+        faixa_min, faixa_max = soma_analise['faixa_ideal']
+        if faixa_min <= soma_jogo <= faixa_max:
+            fator_soma = 20
+        else:
+            distancia = min(abs(soma_jogo - faixa_min), abs(soma_jogo - faixa_max))
+            fator_soma = max(0, 20 - distancia)
+        score += fator_soma
+        fatores['soma'] = round(fator_soma, 1)
+
+        # 3. Balanceamento par/ímpar (0-15 pontos)
+        pares = sum(1 for d in dezenas if d % 2 == 0)
+        if pares == 3:
+            fator_bal = 15
+        elif pares in [2, 4]:
+            fator_bal = 10
+        else:
+            fator_bal = 5
+        score += fator_bal
+        fatores['balanceamento'] = fator_bal
+
+        # 4. Distribuição por quadrante (0-15 pontos)
+        quads = [0, 0, 0, 0]
+        for d in dezenas:
+            if d <= 15: quads[0] += 1
+            elif d <= 30: quads[1] += 1
+            elif d <= 45: quads[2] += 1
+            else: quads[3] += 1
+
+        zeros = quads.count(0)
+        if zeros == 0:
+            fator_dist = 15
+        elif zeros == 1:
+            fator_dist = 10
+        else:
+            fator_dist = 5
+        score += fator_dist
+        fatores['distribuicao'] = fator_dist
+
+        # 5. Consecutivos moderados (0-15 pontos)
+        dezenas_ord = sorted(dezenas)
+        consecutivos = sum(1 for i in range(5) if dezenas_ord[i + 1] - dezenas_ord[i] == 1)
+        if consecutivos in [1, 2]:
+            fator_cons = 15
+        elif consecutivos == 0:
+            fator_cons = 10
+        else:
+            fator_cons = 5
+        score += fator_cons
+        fatores['consecutivos'] = fator_cons
+
+        # 6. Atraso dos números (0-15 pontos)
+        atrasos = self.calcular_atrasos()
+        media_atraso = sum(atrasos.get(d, 0) for d in dezenas) / 6
+        if 3 <= media_atraso <= 8:
+            fator_atraso = 15
+        elif media_atraso < 3:
+            fator_atraso = 10
+        else:
+            fator_atraso = 5
+        score += fator_atraso
+        fatores['atraso'] = fator_atraso
+
+        # Classificação
+        if score >= 85:
+            classificacao = "Excelente"
+            cor = "#22c55e"
+        elif score >= 70:
+            classificacao = "Bom"
+            cor = "#84cc16"
+        elif score >= 55:
+            classificacao = "Regular"
+            cor = "#eab308"
+        else:
+            classificacao = "Fraco"
+            cor = "#ef4444"
+
+        return {
+            'score': round(score, 1),
+            'maximo': 100,
+            'percentual': round(score, 1),
+            'classificacao': classificacao,
+            'cor': cor,
+            'fatores': fatores
+        }
+
 
 class GeradorJogos:
     def __init__(self, analisador: AnalisadorMegaSena, rng: Optional[random.Random] = None):
         self.analisador = analisador
-        self.rng = rng or random.Random()
+        # Usar seed combinando tempo + bytes aleatorios do sistema
+        seed = int.from_bytes(os.urandom(8), 'big') ^ time.time_ns()
+        self.rng = rng or random.Random(seed)
 
     def _faixa(self, dezena: int) -> int:
         for idx, (inicio, fim) in enumerate(FAIXAS):
@@ -316,32 +684,107 @@ class GeradorJogos:
         return self.gerar_uniforme(numeros_fixos, numeros_removidos)
 
     def gerar_jogos(self, quantidade: int, algoritmos: List[str], forcar_balanceamento: bool = False,
-                    numeros_fixos: Set[int] = None, numeros_removidos: Set[int] = None) -> List[List[int]]:
-        peso_base = 1.0 / len(algoritmos) if algoritmos else 0
-        pesos = {
-            'frequencia': peso_base if 'frequencia' in algoritmos else 0,
-            'markov': peso_base if 'markov' in algoritmos else 0,
-            'coocorrencia': peso_base if 'coocorrencia' in algoritmos else 0,
-            'atraso': peso_base if 'atraso' in algoritmos else 0,
-        }
+                    numeros_fixos: Set[int] = None, numeros_removidos: Set[int] = None) -> Tuple[List[List[int]], List[str]]:
+        """
+        Gera jogos com lógica inteligente:
+        - Se quantidade <= algoritmos selecionados: 1 jogo PURO por algoritmo
+        - Se quantidade > algoritmos: primeiro 1 puro de cada, depois mistura
 
+        Retorna: (lista_jogos, lista_algoritmos_usados)
+        """
         jogos = []
+        algoritmos_usados = []
         jogos_gerados: Set[tuple] = set()
 
-        tentativas = 0
-        while len(jogos) < quantidade and tentativas < quantidade * 10:
-            tentativas += 1
-            if 'uniforme' in algoritmos and not any(pesos.values()):
-                jogo = self.gerar_uniforme(numeros_fixos, numeros_removidos)
-            else:
-                jogo = self.gerar_por_scores(pesos, forcar_balanceamento, numeros_fixos, numeros_removidos)
+        # Separar algoritmos de score dos outros
+        algoritmos_score = [a for a in algoritmos if a in ['frequencia', 'markov', 'coocorrencia', 'atraso']]
+        tem_balanceado = 'balanceado' in algoritmos
+        tem_uniforme = 'uniforme' in algoritmos
 
+        # FASE 1: Gerar 1 jogo PURO para cada algoritmo selecionado
+        for alg in algoritmos_score:
+            if len(jogos) >= quantidade:
+                break
+
+            pesos_puro = {
+                'frequencia': 1.0 if alg == 'frequencia' else 0,
+                'markov': 1.0 if alg == 'markov' else 0,
+                'coocorrencia': 1.0 if alg == 'coocorrencia' else 0,
+                'atraso': 1.0 if alg == 'atraso' else 0,
+            }
+
+            tentativas = 0
+            while tentativas < 50:
+                tentativas += 1
+                usar_bal = tem_balanceado or forcar_balanceamento
+                jogo = self.gerar_por_scores(pesos_puro, usar_bal, numeros_fixos, numeros_removidos)
+                jogo_tuple = tuple(jogo)
+                if jogo_tuple not in jogos_gerados:
+                    jogos_gerados.add(jogo_tuple)
+                    jogos.append(jogo)
+                    algoritmos_usados.append(alg.capitalize())
+                    break
+
+        # Jogo balanceado puro (se selecionado e ainda tem espaço)
+        if tem_balanceado and len(jogos) < quantidade and not algoritmos_score:
+            tentativas = 0
+            while tentativas < 50:
+                tentativas += 1
+                jogo = self.gerar_uniforme(numeros_fixos, numeros_removidos)
+                if self._verificar_balanceamento(jogo):
+                    jogo_tuple = tuple(jogo)
+                    if jogo_tuple not in jogos_gerados:
+                        jogos_gerados.add(jogo_tuple)
+                        jogos.append(jogo)
+                        algoritmos_usados.append("Balanceado")
+                        break
+
+        # Jogo uniforme puro (se selecionado e ainda tem espaço)
+        if tem_uniforme and len(jogos) < quantidade:
+            tentativas = 0
+            while tentativas < 50:
+                tentativas += 1
+                jogo = self.gerar_uniforme(numeros_fixos, numeros_removidos)
+                jogo_tuple = tuple(jogo)
+                if jogo_tuple not in jogos_gerados:
+                    jogos_gerados.add(jogo_tuple)
+                    jogos.append(jogo)
+                    algoritmos_usados.append("Aleatório")
+                    break
+
+        # FASE 2: Gerar jogos MISTURADOS (se ainda precisa de mais)
+        if len(jogos) < quantidade and algoritmos_score:
+            peso_base = 1.0 / len(algoritmos_score)
+            pesos_mix = {
+                'frequencia': peso_base if 'frequencia' in algoritmos_score else 0,
+                'markov': peso_base if 'markov' in algoritmos_score else 0,
+                'coocorrencia': peso_base if 'coocorrencia' in algoritmos_score else 0,
+                'atraso': peso_base if 'atraso' in algoritmos_score else 0,
+            }
+
+            tentativas = 0
+            while len(jogos) < quantidade and tentativas < quantidade * 10:
+                tentativas += 1
+                usar_bal = tem_balanceado or forcar_balanceamento
+                jogo = self.gerar_por_scores(pesos_mix, usar_bal, numeros_fixos, numeros_removidos)
+                jogo_tuple = tuple(jogo)
+                if jogo_tuple not in jogos_gerados:
+                    jogos_gerados.add(jogo_tuple)
+                    jogos.append(jogo)
+                    algoritmos_usados.append("Misto")
+
+        # Fallback: completar com uniforme se ainda faltam jogos
+        tentativas = 0
+        while len(jogos) < quantidade and tentativas < quantidade * 5:
+            tentativas += 1
+            jogo = self.gerar_uniforme(numeros_fixos, numeros_removidos)
             jogo_tuple = tuple(jogo)
             if jogo_tuple not in jogos_gerados:
                 jogos_gerados.add(jogo_tuple)
                 jogos.append(jogo)
+                algoritmos_usados.append("Aleatório")
 
-        return jogos
+        return jogos, algoritmos_usados
 
 
 class GeradorFechamento:
@@ -413,29 +856,34 @@ class GeradorFechamento:
 
 
 def carregar_jogos_salvos() -> List[JogoSalvo]:
-    """Carrega jogos salvos do arquivo JSON."""
-    caminho = Path(ARQUIVO_JOGOS_SALVOS)
-    if not caminho.exists():
-        return []
+    """Carrega jogos salvos do Supabase."""
     try:
-        with open(caminho, 'r', encoding='utf-8') as f:
-            dados = json.load(f)
-            return [JogoSalvo.from_dict(j) for j in dados]
+        dados = buscar_jogos_salvos_db()
+        jogos = []
+        for j in dados:
+            jogos.append(JogoSalvo(
+                id=j.get('id', 0),
+                dezenas=j.get('dezenas', []),
+                data_criacao=j.get('data_criacao', ''),
+                algoritmos=j.get('algoritmos', []),
+                conferido=j.get('conferido', False),
+                acertos=j.get('acertos', {})
+            ))
+        return jogos
     except Exception:
         return []
 
 
 def salvar_jogos(jogos: List[JogoSalvo]):
-    """Salva jogos no arquivo JSON."""
-    with open(ARQUIVO_JOGOS_SALVOS, 'w', encoding='utf-8') as f:
-        json.dump([j.to_dict() for j in jogos], f, ensure_ascii=False, indent=2)
+    """Salva jogos no Supabase (usado apenas para compatibilidade)."""
+    # Esta funcao agora é usada apenas para operacoes de lote
+    # Jogos individuais sao salvos com salvar_jogo_db()
+    pass
 
 
 def proximo_id_jogo(jogos: List[JogoSalvo]) -> int:
-    """Retorna o proximo ID disponivel."""
-    if not jogos:
-        return 1
-    return max(j.id for j in jogos) + 1
+    """Retorna o proximo ID disponivel (nao mais necessario com Supabase)."""
+    return 0  # Supabase gera IDs automaticamente
 
 
 def buscar_concurso_caixa(numero: int = None) -> Dict:
@@ -572,8 +1020,49 @@ def verificar_atualizacao_automatica(caminho: str = "resultados.xlsx") -> Tuple[
         return False, 0
 
 
+@st.cache_data(ttl=300)  # Cache por 5 minutos
+def carregar_resultados_supabase(usar_ultimo_ano: bool = True) -> List[Concurso]:
+    """Carrega concursos do Supabase."""
+    try:
+        if usar_ultimo_ano:
+            dados = buscar_concursos_ultimo_ano()
+        else:
+            dados = buscar_todos_concursos()
+
+        concursos = []
+        for c in dados:
+            try:
+                numero = c.get('numero', 0)
+                data_str = c.get('data', '')
+
+                if isinstance(data_str, str):
+                    data = dt.datetime.strptime(data_str, "%Y-%m-%d").date()
+                else:
+                    data = data_str
+
+                dezenas = tuple(sorted([
+                    c.get('dezena1', 0),
+                    c.get('dezena2', 0),
+                    c.get('dezena3', 0),
+                    c.get('dezena4', 0),
+                    c.get('dezena5', 0),
+                    c.get('dezena6', 0),
+                ]))
+
+                if len(dezenas) == 6 and all(DEZENA_MIN <= d <= DEZENA_MAX for d in dezenas):
+                    concursos.append(Concurso(numero=numero, data=data, dezenas=dezenas))
+            except Exception:
+                continue
+
+        return concursos
+    except Exception as e:
+        st.error(f"Erro ao carregar do Supabase: {e}")
+        return []
+
+
 @st.cache_data
 def carregar_resultados_excel(caminho: str) -> List[Concurso]:
+    """Fallback: Carrega concursos do Excel."""
     df = pd.read_excel(caminho)
     concursos = []
 
@@ -693,7 +1182,8 @@ def main():
     st.set_page_config(
         page_title="Mega-Sena - Gerador Inteligente",
         page_icon="🍀",
-        layout="wide"
+        layout="wide",
+        initial_sidebar_state="collapsed"
     )
 
     # Inicializar session state
@@ -701,149 +1191,140 @@ def main():
         st.session_state.jogos_gerados = []
     if 'algoritmos_usados' not in st.session_state:
         st.session_state.algoritmos_usados = []
+    if 'algoritmos_por_jogo' not in st.session_state:
+        st.session_state.algoritmos_por_jogo = []
 
-    # CSS personalizado
-    st.markdown("""
-    <style>
-        .main-header {
-            background: linear-gradient(135deg, #1a5f2a, #2e7d32);
-            padding: 20px;
-            border-radius: 10px;
-            color: white;
-            text-align: center;
-            margin-bottom: 20px;
-        }
-        .jogo-card {
-            background: linear-gradient(135deg, #f5f5f5, #e0e0e0);
-            padding: 15px;
-            border-radius: 10px;
-            margin: 10px 0;
-            border-left: 5px solid #2e7d32;
-        }
-        .numero-grande {
-            display: inline-block;
-            width: 45px;
-            height: 45px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, #2e7d32, #4caf50);
-            color: white;
-            text-align: center;
-            line-height: 45px;
-            font-weight: bold;
-            font-size: 18px;
-            margin: 3px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-        }
-        .numero-fixo {
-            background: linear-gradient(135deg, #1565c0, #42a5f5) !important;
-        }
-        .numero-acerto {
-            background: linear-gradient(135deg, #f9a825, #fdd835) !important;
-            color: #333 !important;
-        }
-        .stat-card {
-            background: white;
-            padding: 15px;
-            border-radius: 10px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-            text-align: center;
-        }
-        .stat-numero {
-            font-size: 32px;
-            font-weight: bold;
-            color: #2e7d32;
-        }
-        .premio-sena { color: #2e7d32; font-weight: bold; }
-        .premio-quina { color: #1565c0; font-weight: bold; }
-        .premio-quadra { color: #f9a825; font-weight: bold; }
-    </style>
-    """, unsafe_allow_html=True)
+    # Aplicar CSS Premium
+    st.markdown(get_premium_styles(), unsafe_allow_html=True)
 
-    # Header
+    # Header com texto verde
     st.markdown("""
-    <div class="main-header">
-        <h1>🍀 Gerador Inteligente - Mega-Sena</h1>
-        <p>Gere jogos com algoritmos estatisticos, fechamentos, simulacoes e muito mais!</p>
+    <div style="text-align: center; padding: 1.5rem 0; margin-bottom: 1rem;">
+        <h1 style="color: #22c55e; font-size: 2.2rem; font-weight: 700; margin: 0;">
+            🍀 Gerador Inteligente - Mega-Sena
+        </h1>
+        <p style="color: #22c55e; font-size: 1rem; margin-top: 0.5rem; opacity: 0.8;">
+            Algoritmos estatísticos avançados para maximizar suas chances
+        </p>
     </div>
     """, unsafe_allow_html=True)
 
-    # Carregar dados
-    caminho = Path("resultados.xlsx")
-    if not caminho.exists():
-        st.error("Arquivo 'resultados.xlsx' nao encontrado!")
-        st.info("Clique em 'Atualizar Resultados' na aba Configuracoes para baixar os dados.")
+    # Carregar dados do Supabase
+    try:
+        concursos = carregar_resultados_supabase(usar_ultimo_ano=True)
+        if not concursos:
+            st.warning("Nenhum concurso encontrado no banco. Sincronizando...")
+            with st.spinner("🔄 Sincronizando com a Caixa..."):
+                novos, _, msg = sincronizar_com_caixa(dias_atras=365)
+            if novos > 0:
+                st.cache_data.clear()
+                st.rerun()
+            else:
+                st.error("Não foi possível carregar os dados.")
+                return
+
+        analisador_completo = AnalisadorMegaSena(concursos)
+
+        # Verificar atualizações automaticamente
+        if 'atualizacao_verificada' not in st.session_state:
+            st.session_state.atualizacao_verificada = False
+
+        if not st.session_state.atualizacao_verificada:
+            ha_novos, ultimo_local, ultimo_caixa = verificar_atualizacao()
+            if ha_novos:
+                with st.spinner("🔄 Atualizando resultados..."):
+                    novos, _, msg = sincronizar_com_caixa(dias_atras=30)
+                if novos > 0:
+                    st.cache_data.clear()
+                    st.session_state.atualizacao_verificada = True
+                    st.rerun()
+            st.session_state.atualizacao_verificada = True
+
+    except Exception as e:
+        st.error(f"Erro ao conectar com Supabase: {e}")
+        st.info("Verifique as configurações no arquivo .env")
         return
 
-    concursos = carregar_resultados_excel(str(caminho))
-    analisador_completo = AnalisadorMegaSena(concursos)
+    # ===== CONTROLES INLINE (sem sidebar) =====
+    # Filtrar dados por período padrão
+    analisador = analisador_completo.filtrar_por_anos(3)
 
-    # Atualizar automaticamente se houver novos concursos
-    if 'atualizacao_verificada' not in st.session_state:
-        st.session_state.atualizacao_verificada = False
+    # Variáveis de configuração com valores padrão
+    anos = 3
+    qtd_jogos = 6
+    usar_frequencia = True
+    usar_markov = True
+    usar_balanceado = True
+    usar_atraso = False
+    usar_coocorrencia = False
+    usar_uniforme = False
+    numeros_fixos_sel = []
+    numeros_removidos_sel = []
+    todos_numeros = list(range(1, 61))
 
-    if not st.session_state.atualizacao_verificada:
-        ha_atualizacao, ultimo_caixa = verificar_atualizacao_automatica()
-        if ha_atualizacao:
-            with st.spinner("🔄 Atualizando resultados..."):
-                sucesso, msg, qtd = atualizar_arquivo_resultados()
-            if sucesso and qtd > 0:
-                st.cache_data.clear()
-                st.session_state.atualizacao_verificada = True
-                st.rerun()
-        st.session_state.atualizacao_verificada = True
+    # Painel de configurações expansível
+    with st.expander("⚙️ Escolha as configurações", expanded=False):
+        col_cfg1, col_cfg2, col_cfg3 = st.columns(3)
 
-    # Sidebar
-    with st.sidebar:
-        st.header("⚙️ Configuracoes")
+        with col_cfg1:
+            st.markdown("**📅 Período**")
+            anos = st.slider("Anos", 1, 10, 3, key="anos_slider")
+            analisador = analisador_completo.filtrar_por_anos(anos)
+            st.caption(f"📊 {len(analisador.concursos)} concursos")
 
-        st.subheader("📅 Periodo de Analise")
-        anos = st.slider("Anos de historico:", 1, 10, 3)
+        with col_cfg2:
+            st.markdown("**🎯 Quantidade**")
+            qtd_jogos = st.number_input("Jogos", 1, 50, 6, key="qtd_input")
+            custo = qtd_jogos * 5.00
+            st.caption(f"💰 R$ {custo:.2f}")
 
-        analisador = analisador_completo.filtrar_por_anos(anos)
-        st.info(f"📊 {len(analisador.concursos)} concursos analisados")
+        with col_cfg3:
+            st.markdown("**🧠 Algoritmos**")
+            usar_frequencia = st.checkbox("Frequência", True, key="chk_freq")
+            usar_markov = st.checkbox("Markov", True, key="chk_markov")
+            usar_balanceado = st.checkbox("Balanceado", True, key="chk_bal")
 
-        st.subheader("🧮 Algoritmos")
+        col_cfg4, col_cfg5, col_cfg6 = st.columns(3)
 
-        usar_frequencia = st.checkbox("📈 Frequencia", value=True, help="Numeros mais sorteados")
-        usar_markov = st.checkbox("🔗 Markov", value=True, help="Seguidores do ultimo sorteio")
-        usar_coocorrencia = st.checkbox("👥 Co-ocorrencia", value=False, help="Pares frequentes")
-        usar_atraso = st.checkbox("⏰ Atrasados", value=False, help="Numeros que nao saem ha tempo")
-        usar_balanceado = st.checkbox("⚖️ Balanceado", value=True, help="Equilibrio par/impar")
-        usar_uniforme = st.checkbox("🎲 Uniforme", value=False, help="Aleatorio puro")
+        with col_cfg4:
+            st.markdown("**🧠 Mais Algoritmos**")
+            usar_atraso = st.checkbox("Atrasados", False, key="chk_atraso")
+            usar_coocorrencia = st.checkbox("Coocorrência", False, key="chk_cooc")
+            usar_uniforme = st.checkbox("Aleatório", False, key="chk_unif")
 
-        st.subheader("🎯 Quantidade")
-        qtd_jogos = st.number_input("Jogos a gerar:", 1, 50, 6)
+        with col_cfg5:
+            st.markdown("**🔒 Números Fixos**")
+            numeros_fixos_sel = st.multiselect(
+                "Fixos",
+                todos_numeros,
+                default=[],
+                max_selections=5,
+                format_func=lambda x: f"{x:02d}",
+                key="fixos_sel",
+                label_visibility="collapsed"
+            )
 
-        # Lista de todos os numeros disponiveis
-        todos_numeros = [f"{i:02d}" for i in range(1, 61)]
-
-        st.subheader("🔢 Numeros Fixos")
-        numeros_fixos_sel = st.multiselect(
-            "Selecione numeros fixos (max 6):",
-            options=todos_numeros,
-            default=[],
-            help="Numeros que DEVEM aparecer em todos os jogos",
-            max_selections=6
-        )
-
-        st.subheader("🚫 Numeros Removidos")
-        # Filtrar numeros ja selecionados como fixos
-        numeros_disponiveis = [n for n in todos_numeros if n not in numeros_fixos_sel]
-        numeros_removidos_sel = st.multiselect(
-            "Selecione numeros a remover:",
-            options=numeros_disponiveis,
-            default=[],
-            help="Numeros que NAO devem aparecer"
-        )
+        with col_cfg6:
+            st.markdown("**🚫 Excluídos**")
+            numeros_disponiveis = [n for n in todos_numeros if n not in numeros_fixos_sel]
+            numeros_removidos_sel = st.multiselect(
+                "Excluídos",
+                numeros_disponiveis,
+                default=[],
+                format_func=lambda x: f"{x:02d}",
+                key="removidos_sel",
+                label_visibility="collapsed"
+            )
 
     # Converter selecoes para sets de inteiros
-    numeros_fixos = {int(n) for n in numeros_fixos_sel}
-    numeros_removidos = {int(n) for n in numeros_removidos_sel}
+    numeros_fixos = set(numeros_fixos_sel)
+    numeros_removidos = set(numeros_removidos_sel)
 
     # Tabs principais
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "🎰 Gerar Jogos",
-        "📊 Estatisticas",
+        "📊 Estatísticas",
+        "🎲 Probabilidades",
         "🔒 Fechamento",
         "🎯 Simulador",
         "💾 Meus Jogos",
@@ -870,30 +1351,24 @@ def main():
                     algoritmos.append('coocorrencia')
                 if usar_atraso:
                     algoritmos.append('atraso')
+                if usar_balanceado:
+                    algoritmos.append('balanceado')
                 if usar_uniforme:
                     algoritmos.append('uniforme')
 
-                if not algoritmos and not usar_balanceado:
+                if not algoritmos:
                     st.warning("Selecione pelo menos um algoritmo!")
                 else:
                     gerador = GeradorJogos(analisador)
-                    jogos = gerador.gerar_jogos(qtd_jogos, algoritmos, usar_balanceado, numeros_fixos, numeros_removidos)
+                    jogos, algoritmos_por_jogo = gerador.gerar_jogos(
+                        qtd_jogos, algoritmos, usar_balanceado, numeros_fixos, numeros_removidos
+                    )
 
                     st.session_state.jogos_gerados = jogos
-                    st.session_state.algoritmos_usados = algoritmos + (['balanceado'] if usar_balanceado else [])
+                    st.session_state.algoritmos_por_jogo = algoritmos_por_jogo
+                    st.session_state.algoritmos_usados = algoritmos
 
                     st.success(f"✅ {len(jogos)} jogos gerados!")
-
-                    # Exibir algoritmos usados
-                    algos_nomes = []
-                    if usar_frequencia: algos_nomes.append("Frequencia")
-                    if usar_markov: algos_nomes.append("Markov")
-                    if usar_coocorrencia: algos_nomes.append("Co-ocorrencia")
-                    if usar_atraso: algos_nomes.append("Atrasados")
-                    if usar_balanceado: algos_nomes.append("Balanceado")
-                    if usar_uniforme: algos_nomes.append("Uniforme")
-
-                    st.caption(f"Algoritmos: {', '.join(algos_nomes)}")
 
             # Exibir jogos gerados
             if st.session_state.jogos_gerados:
@@ -922,59 +1397,111 @@ def main():
 
                 with col_exp3:
                     if st.button("💾 Salvar Jogos"):
-                        jogos_salvos = carregar_jogos_salvos()
-                        for jogo in st.session_state.jogos_gerados:
-                            novo_jogo = JogoSalvo(
-                                id=proximo_id_jogo(jogos_salvos),
-                                dezenas=jogo,
-                                data_criacao=dt.datetime.now().isoformat(),
-                                algoritmos=st.session_state.algoritmos_usados
-                            )
-                            jogos_salvos.append(novo_jogo)
-                        salvar_jogos(jogos_salvos)
-                        st.success(f"✅ {len(st.session_state.jogos_gerados)} jogos salvos!")
+                        # Salvar no Supabase
+                        jogos_para_salvar = [
+                            {"dezenas": jogo, "algoritmos": st.session_state.algoritmos_usados}
+                            for jogo in st.session_state.jogos_gerados
+                        ]
+                        sucesso, falhas = salvar_jogos_em_lote(jogos_para_salvar)
+                        if sucesso > 0:
+                            st.success(f"✅ {sucesso} jogos salvos no banco!")
+                        else:
+                            st.error("Erro ao salvar jogos.")
 
                 st.markdown("---")
 
+                # Obter lista de algoritmos por jogo
+                algoritmos_por_jogo = st.session_state.get('algoritmos_por_jogo', [])
+
+                # CSS para bolinhas verdes
+                st.markdown("""
+                <style>
+                .bola-verde {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    width: 42px;
+                    height: 42px;
+                    background: linear-gradient(145deg, #22c55e, #16a34a);
+                    color: white;
+                    border-radius: 50%;
+                    font-weight: 700;
+                    font-size: 1rem;
+                    margin: 3px;
+                    box-shadow: 0 4px 8px rgba(0,0,0,0.3), inset 0 2px 4px rgba(255,255,255,0.3);
+                    text-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+                }
+                .jogo-container {
+                    background: rgba(30, 41, 59, 0.6);
+                    border-radius: 12px;
+                    padding: 1rem;
+                    margin-bottom: 0.75rem;
+                    border: 1px solid rgba(34, 197, 94, 0.2);
+                }
+                .jogo-header {
+                    color: #94a3b8;
+                    font-size: 0.85rem;
+                    margin-bottom: 0.5rem;
+                }
+                .jogo-header strong {
+                    color: #22c55e;
+                }
+                .bolas-row {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 6px;
+                }
+                </style>
+                """, unsafe_allow_html=True)
+
+                # Exibição com bolinhas verdes
                 for i, jogo in enumerate(st.session_state.jogos_gerados, 1):
-                    pares = sum(1 for d in jogo if d % 2 == 0)
-                    impares = 6 - pares
+                    alg_usado = algoritmos_por_jogo[i-1] if i <= len(algoritmos_por_jogo) else "Misto"
 
-                    with st.container():
-                        st.markdown(f"### Jogo {i:02d}")
+                    bolas_html = "".join(f'<span class="bola-verde">{n:02d}</span>' for n in jogo)
 
-                        # Numeros grandes (destacar fixos)
-                        numeros_html = ""
-                        for d in jogo:
-                            classe = "numero-grande numero-fixo" if d in numeros_fixos else "numero-grande"
-                            numeros_html += f'<span class="{classe}">{d:02d}</span>'
-                        st.markdown(f'<div>{numeros_html}</div>', unsafe_allow_html=True)
-
-                        # Info do jogo
-                        col_a, col_b, col_c = st.columns(3)
-                        col_a.metric("Pares", pares)
-                        col_b.metric("Impares", impares)
-
-                        faixas = [0, 0, 0]
-                        for d in jogo:
-                            if d <= 20: faixas[0] += 1
-                            elif d <= 40: faixas[1] += 1
-                            else: faixas[2] += 1
-                        col_c.metric("Faixas", f"{faixas[0]}-{faixas[1]}-{faixas[2]}")
-
-                        # Volante visual
-                        with st.expander("Ver Volante"):
-                            st.markdown(criar_volante_html(jogo), unsafe_allow_html=True)
-
-                        st.divider()
+                    st.markdown(f"""
+                    <div class="jogo-container">
+                        <div class="jogo-header">
+                            <strong>Jogo {i:02d}</strong> • {alg_usado}
+                        </div>
+                        <div class="bolas-row">
+                            {bolas_html}
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
 
         with col2:
-            st.subheader("📋 Ultimo Sorteio")
+            st.markdown("""
+            <div class="ultimo-sorteio">
+                <h3>🎱 Último Sorteio</h3>
+            </div>
+            """, unsafe_allow_html=True)
+
             if analisador.ultimo_concurso:
-                st.write(f"**Concurso:** {analisador.ultimo_concurso.numero}")
-                st.write(f"**Data:** {analisador.ultimo_concurso.data}")
-                numeros = " - ".join([f"{d:02d}" for d in analisador.ultimo_concurso.dezenas])
-                st.code(numeros)
+                st.markdown(f"""
+                <div style="margin-bottom: 1rem;">
+                    <div style="color: #94a3b8; font-size: 0.9rem; margin-bottom: 0.5rem;">
+                        Concurso <span style="color: #10b981; font-weight: 600;">{analisador.ultimo_concurso.numero}</span>
+                        • {analisador.ultimo_concurso.data.strftime('%d/%m/%Y')}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                # Mostrar bolas 3D do último sorteio
+                st.markdown(
+                    criar_bolas_jogo(list(analisador.ultimo_concurso.dezenas)),
+                    unsafe_allow_html=True
+                )
+
+                # KPI Cards
+                st.markdown("<div style='margin-top: 1.5rem;'></div>", unsafe_allow_html=True)
+                kpi_col1, kpi_col2 = st.columns(2)
+                with kpi_col1:
+                    st.markdown(criar_kpi_card(str(len(concursos)), "Concursos Analisados", "📊"), unsafe_allow_html=True)
+                with kpi_col2:
+                    pares_ult = sum(1 for d in analisador.ultimo_concurso.dezenas if d % 2 == 0)
+                    st.markdown(criar_kpi_card(f"{pares_ult}/6", "Pares no Último", "⚖️"), unsafe_allow_html=True)
 
     with tab2:
         st.subheader("📊 Analise Estatistica")
@@ -1031,6 +1558,184 @@ def main():
                 st.info("Sem dados de atraso para exibir.")
 
     with tab3:
+        st.subheader("🎲 Probabilidades e Analise Avancada")
+
+        st.markdown("""
+        Analise estatistica avancada baseada em **probabilidades reais** e **simulacoes**.
+        """)
+
+        # Probabilidades Reais
+        st.markdown("### 📊 Probabilidades Reais da Mega-Sena")
+        probs = analisador_completo.probabilidades_reais()
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric(
+                "🎯 Sena (6 acertos)",
+                probs['sena']['texto'],
+                help=f"Probabilidade: {probs['sena']['percentual']:.10f}%"
+            )
+        with col2:
+            st.metric(
+                "🎯 Quina (5 acertos)",
+                probs['quina']['texto'],
+                help=f"Probabilidade: {probs['quina']['percentual']:.6f}%"
+            )
+        with col3:
+            st.metric(
+                "🎯 Quadra (4 acertos)",
+                probs['quadra']['texto'],
+                help=f"Probabilidade: {probs['quadra']['percentual']:.4f}%"
+            )
+
+        st.divider()
+
+        # Analise de Soma
+        st.markdown("### 📈 Analise de Soma dos Numeros")
+        soma_analise = analisador_completo.analise_soma()
+
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Media", f"{soma_analise['media']:.1f}")
+        with col2:
+            st.metric("Minima", str(soma_analise['min']))
+        with col3:
+            st.metric("Maxima", str(soma_analise['max']))
+        with col4:
+            st.metric("Desvio Padrao", f"{soma_analise['desvio']:.1f}")
+
+        faixa_min, faixa_max = soma_analise['faixa_ideal']
+        st.info(f"💡 **Faixa ideal de soma**: {faixa_min} a {faixa_max} (media ± 1 desvio padrao)")
+
+        # Grafico de distribuicao de soma
+        if soma_analise['distribuicao']:
+            df_soma = pd.DataFrame(list(soma_analise['distribuicao'].items()), columns=['Faixa', 'Frequencia'])
+            st.bar_chart(df_soma.set_index('Faixa'))
+
+        st.divider()
+
+        # Analise de Padroes
+        st.markdown("### 🔍 Padroes nos Sorteios")
+        padroes = analisador_completo.analise_padroes()
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.markdown("**Numeros Consecutivos**")
+            st.write(f"Total de pares: {padroes['consecutivos']['total']}")
+            st.write(f"Media por sorteio: {padroes['consecutivos']['media_por_sorteio']:.2f}")
+            st.write(f"Percentual: {padroes['consecutivos']['percentual']:.1f}%")
+
+        with col2:
+            st.markdown("**Mesmo Final**")
+            st.write(f"Sorteios com mesmo final: {padroes['mesmo_final']['total']}")
+            st.write(f"Percentual: {padroes['mesmo_final']['percentual']:.1f}%")
+
+        with col3:
+            st.markdown("**Numeros Repetidos**")
+            st.write(f"Sorteios com repetidos: {padroes['repetidos']['total']}")
+            st.write(f"Percentual: {padroes['repetidos']['percentual']:.1f}%")
+
+        st.divider()
+
+        # Analise de Quadrantes
+        st.markdown("### 🎯 Distribuicao por Quadrantes")
+        quadrantes = analisador_completo.analise_quadrantes()
+
+        st.markdown("""
+        Os numeros sao divididos em 4 faixas (quadrantes):
+        - **Q1**: 01-15 | **Q2**: 16-30 | **Q3**: 31-45 | **Q4**: 46-60
+        """)
+
+        col1, col2, col3, col4 = st.columns(4)
+        cols = [col1, col2, col3, col4]
+        for i, (q_nome, q_total) in enumerate(quadrantes['contagem'].items()):
+            with cols[i]:
+                percentual = quadrantes['percentuais'].get(q_nome, 0)
+                st.metric(
+                    q_nome,
+                    f"{q_total} nums",
+                    help=f"Percentual: {percentual:.1f}%"
+                )
+
+        ideal = quadrantes['ideal']
+        st.info(f"💡 **Distribuicao ideal sugerida**: {ideal[0]}-{ideal[1]}-{ideal[2]}-{ideal[3]} (Q1-Q2-Q3-Q4)")
+
+        st.divider()
+
+        # Ciclos de Atraso
+        st.markdown("### ⏱️ Ciclos de Atraso")
+        ciclos = analisador_completo.ciclos_atraso()
+
+        # Top 10 numeros mais atrasados
+        top_atrasados = sorted(ciclos.items(), key=lambda x: x[1]['ultimo_atraso'], reverse=True)[:10]
+
+        st.markdown("**Top 10 Numeros Mais Atrasados:**")
+        for num, dados in top_atrasados:
+            ciclo_medio = dados['media'] if dados['media'] > 0 else 1
+            progresso = min(dados['ultimo_atraso'] / ciclo_medio, 2.0)
+            cor = "🔴" if progresso > 1.5 else "🟡" if progresso > 1.0 else "🟢"
+            st.write(f"{cor} **{num:02d}**: {dados['ultimo_atraso']} sorteios (ciclo medio: {dados['media']:.1f})")
+
+        st.divider()
+
+        # Simulacao Monte Carlo
+        st.markdown("### 🎰 Simulacao Monte Carlo")
+        st.markdown("Simulacao de milhares de jogos para calcular o retorno esperado.")
+
+        num_simulacoes = st.slider("Numero de simulacoes:", 1000, 50000, 10000, step=1000)
+
+        if st.button("🎲 Executar Simulacao", key="btn_monte_carlo"):
+            with st.spinner("Executando simulacao..."):
+                resultado_mc = analisador_completo.simulacao_monte_carlo(num_simulacoes)
+
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Total de Jogos", f"{resultado_mc['simulacoes']:,}")
+                st.metric("Investimento", f"R$ {resultado_mc['custo_total']:,.2f}")
+                st.metric("Premios Ganhos", f"R$ {resultado_mc['ganhos_total']:,.2f}")
+
+            with col2:
+                st.metric("ROI", f"{resultado_mc['roi']:.2f}%")
+                st.metric("Quadras", str(resultado_mc['acertos'].get(4, 0)))
+                st.metric("Quinas", str(resultado_mc['acertos'].get(5, 0)))
+                st.metric("Senas", str(resultado_mc['acertos'].get(6, 0)))
+
+            if resultado_mc['roi'] < 0:
+                st.warning(f"⚠️ **Conclusao**: Prejuizo de {abs(resultado_mc['roi']):.2f}%. Loteria e um jogo de azar!")
+            else:
+                st.success(f"✅ **Conclusao**: Lucro de {resultado_mc['roi']:.2f}% (sorte na simulacao)")
+
+        st.divider()
+
+        # Indice de Confianca para um jogo
+        st.markdown("### 📋 Indice de Confianca de um Jogo")
+        st.markdown("Avalie a qualidade estatistica de um jogo especifico.")
+
+        todos_nums_ic = [f"{i:02d}" for i in range(1, 61)]
+        jogo_ic = st.multiselect(
+            "Selecione 6 numeros para avaliar:",
+            options=todos_nums_ic,
+            default=[],
+            max_selections=6,
+            key="indice_confianca_input"
+        )
+
+        if len(jogo_ic) == 6:
+            dezenas_ic = sorted([int(n) for n in jogo_ic])
+            ic = analisador_completo.indice_confianca(dezenas_ic)
+
+            st.markdown(f"""
+            <div style="text-align: center; padding: 1rem; background: {ic['cor']}22; border-radius: 10px; border: 2px solid {ic['cor']};">
+                <h2 style="color: {ic['cor']}; margin: 0;">{ic['score']}/100</h2>
+                <p style="color: {ic['cor']}; margin: 0.5rem 0 0 0;">{ic['classificacao']}</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+            st.markdown("**Fatores analisados:**")
+            for fator, valor in ic['fatores'].items():
+                st.write(f"- **{fator.replace('_', ' ').title()}**: {valor:.1f}/100")
+
+    with tab4:
         st.subheader("🔒 Fechamento / Desdobramento")
 
         st.markdown("""
@@ -1102,7 +1807,7 @@ def main():
                         numeros_html = "".join([f'<span class="numero-grande">{d:02d}</span>' for d in jogo])
                         st.markdown(f"**Jogo {i:02d}:** {numeros_html}", unsafe_allow_html=True)
 
-    with tab4:
+    with tab5:
         st.subheader("🎯 Simulador de Jogos")
 
         st.markdown("""
@@ -1110,65 +1815,64 @@ def main():
         teria acertado quadra, quina ou sena!
         """)
 
-        col1, col2 = st.columns([1, 1])
+        # Seleção de números
+        col_sim1, col_sim2 = st.columns([2, 1])
 
-        with col1:
-            todos_nums_sim = [f"{i:02d}" for i in range(1, 61)]
+        with col_sim1:
+            todos_nums_sim = list(range(1, 61))
             dezenas_simular_sel = st.multiselect(
-                "Selecione 6 numeros para simular:",
+                "Selecione 6 números para simular:",
                 options=todos_nums_sim,
                 default=[],
-                help="Selecione exatamente 6 numeros",
+                format_func=lambda x: f"{x:02d}",
+                help="Selecione exatamente 6 números",
                 max_selections=6
             )
 
-            qtd_concursos = st.slider("Quantidade de concursos para simular:", 50, 500, 100)
+        with col_sim2:
+            qtd_concursos = st.slider("Concursos:", 50, 500, 100)
 
-        if dezenas_simular_sel:
-            dezenas_sim = sorted([int(n) for n in dezenas_simular_sel])
+        # Validação e botão
+        if len(dezenas_simular_sel) == 6:
+            dezenas_sim = sorted(dezenas_simular_sel)
+            st.info(f"🎲 Jogo: {' - '.join(f'{d:02d}' for d in dezenas_sim)}")
 
-            if len(dezenas_sim) != 6:
-                st.warning(f"Selecione exatamente 6 numeros! (Selecionados: {len(dezenas_sim)})")
-            else:
-                st.info(f"Simulando: {' - '.join(f'{d:02d}' for d in dezenas_sim)}")
-
-                if st.button("🎯 Simular", type="primary"):
+            if st.button("🎯 Simular nos últimos concursos", type="primary"):
+                with st.spinner("Simulando..."):
                     resultados = analisador_completo.simular_jogo(dezenas_sim, qtd_concursos)
 
-                    with col2:
-                        st.markdown("### Resultados da Simulacao")
+                st.markdown("---")
+                st.markdown("### 📊 Resultados da Simulação")
+                st.caption(f"Analisados {resultados['total_concursos']} concursos")
 
-                        # Metricas
-                        col_m1, col_m2, col_m3 = st.columns(3)
-                        col_m1.metric("🏆 Senas", resultados['acertos'][6], delta=None)
-                        col_m2.metric("⭐ Quinas", resultados['acertos'][5], delta=None)
-                        col_m3.metric("🎯 Quadras", resultados['acertos'][4], delta=None)
+                # Métricas principais
+                col_m1, col_m2, col_m3 = st.columns(3)
+                col_m1.metric("🏆 Senas", resultados['acertos'][6])
+                col_m2.metric("⭐ Quinas", resultados['acertos'][5])
+                col_m3.metric("🎯 Quadras", resultados['acertos'][4])
 
-                        # Distribuicao completa
-                        st.markdown("#### Distribuicao de Acertos")
-                        df_acertos = pd.DataFrame([
-                            {'Acertos': f'{i} acertos', 'Quantidade': resultados['acertos'][i]}
-                            for i in range(7)
-                        ])
-                        if df_acertos['Quantidade'].sum() > 0:
-                            st.bar_chart(df_acertos.set_index('Acertos'))
-                        else:
-                            st.info("Nenhum dado para exibir.")
+                # Distribuição completa
+                st.markdown("#### Distribuição de Acertos")
+                df_acertos = pd.DataFrame([
+                    {'Acertos': f'{i}', 'Quantidade': resultados['acertos'][i]}
+                    for i in range(7)
+                ])
+                st.bar_chart(df_acertos.set_index('Acertos'))
 
-                        # Detalhes de premios
-                        if resultados['detalhes']:
-                            st.markdown("#### Premiacoes (4+ acertos)")
-                            for det in resultados['detalhes']:
-                                classe = 'premio-sena' if det['acertos'] == 6 else 'premio-quina' if det['acertos'] == 5 else 'premio-quadra'
-                                st.markdown(
-                                    f"<span class='{classe}'>Concurso {det['concurso']}</span> ({det['data']}): "
-                                    f"**{det['acertos']} acertos** - Sorteados: {det['dezenas_sorteadas']}",
-                                    unsafe_allow_html=True
-                                )
-                        else:
-                            st.info("Nenhuma premiacao (4+) nos concursos simulados.")
+                # Detalhes de prêmios
+                if resultados['detalhes']:
+                    st.markdown("#### 🏅 Premiações (4+ acertos)")
+                    for det in resultados['detalhes']:
+                        emoji = "🏆" if det['acertos'] == 6 else "⭐" if det['acertos'] == 5 else "🎯"
+                        dezenas_str = " - ".join(f"{d:02d}" for d in det['dezenas_sorteadas'])
+                        st.success(f"{emoji} Concurso {det['concurso']} ({det['data']}): **{det['acertos']} acertos** | Sorteio: {dezenas_str}")
+                else:
+                    st.info("Nenhuma premiação (4+) nos concursos simulados.")
 
-    with tab5:
+        elif len(dezenas_simular_sel) > 0:
+            st.warning(f"Selecione exatamente 6 números! (Selecionados: {len(dezenas_simular_sel)})")
+
+    with tab6:
         st.subheader("💾 Meus Jogos Salvos")
 
         jogos_salvos = carregar_jogos_salvos()
@@ -1183,7 +1887,7 @@ def main():
 
             with col1:
                 if st.button("🗑️ Limpar Todos"):
-                    salvar_jogos([])
+                    deletar_todos_jogos()
                     st.rerun()
 
             with col2:
@@ -1212,13 +1916,12 @@ def main():
 
                     with col_j3:
                         if st.button("🗑️", key=f"del_{jogo.id}"):
-                            jogos_salvos = [j for j in jogos_salvos if j.id != jogo.id]
-                            salvar_jogos(jogos_salvos)
+                            deletar_jogo_db(jogo.id)
                             st.rerun()
 
                     st.divider()
 
-    with tab6:
+    with tab7:
         st.subheader("✅ Conferir Jogos")
 
         st.markdown("Confira seus jogos contra os resultados dos sorteios.")
@@ -1283,12 +1986,10 @@ def main():
                 if st.button("✅ Conferir Todos", type="primary"):
                     for jogo in jogos_salvos:
                         acertos = analisador_completo.conferir_jogo(jogo.dezenas, concurso_conf)
-                        if jogo.acertos is None:
-                            jogo.acertos = {}
+                        conferir_jogo_no_banco(jogo.id, concurso_conf.numero, acertos)
+                        jogo.acertos = jogo.acertos or {}
                         jogo.acertos[concurso_conf.numero] = acertos
-                        jogo.conferido = True
 
-                    salvar_jogos(jogos_salvos)
                     st.success("Todos os jogos conferidos!")
 
                     # Mostrar resultados
