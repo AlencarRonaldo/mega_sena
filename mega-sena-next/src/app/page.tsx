@@ -219,28 +219,39 @@ export default function MegaSenaApp() {
               <div className="flex items-center gap-2 text-emerald-300 text-sm font-semibold">
                 <Sparkles className="w-4 h-4" /> {isDark ? "Premium Dark" : "Tema Claro"}
               </div>
-              <h1
-                className={`text-3xl md:text-4xl font-bold mt-2 flex items-center gap-2 ${
-                  isDark ? "text-emerald-300" : "text-emerald-600"
-                }`}
-              >
-                <span role="img" aria-label="trevo">🍀</span>
-                Gerador Inteligente - Mega-Sena
+              <div className="flex items-center gap-2 mt-2 whitespace-nowrap">
+                <span
+                  className={`text-3xl md:text-4xl font-bold ${
+                    isDark ? "text-emerald-300" : "text-emerald-600"
+                  }`}
+                  role="img"
+                  aria-label="trevo"
+                >
+                  🍀
+                </span>
+                <h1
+                  className={`text-3xl md:text-4xl font-bold ${
+                    isDark ? "text-emerald-300" : "text-emerald-600"
+                  }`}
+                >
+                  Gerador Inteligente - Mega-Sena
           </h1>
+              </div>
               <p className={isDark ? "text-emerald-100/80 mt-1" : "text-slate-600 mt-1"}>
                 Algoritmos combinados, balanceamento e Supabase integrado
               </p>
             </div>
 
             <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                className={isDark ? "border-white/20 text-white" : "border-slate-300 text-slate-800"}
+              <button
+                aria-label="Alternar tema"
                 onClick={() => setTema(isDark ? 'light' : 'dark')}
+                className={`p-2 rounded-full border transition ${
+                  isDark ? "border-white/20 text-white hover:bg-white/10" : "border-slate-300 text-slate-800 hover:bg-slate-100"
+                }`}
               >
-                {isDark ? <Sun className="w-4 h-4 mr-1" /> : <Moon className="w-4 h-4 mr-1" />}
-                {isDark ? "Tema claro" : "Tema escuro"}
-              </Button>
+                {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              </button>
             </div>
 
             {ultimoConcurso && (
