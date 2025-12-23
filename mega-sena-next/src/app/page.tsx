@@ -267,12 +267,25 @@ export default function MegaSenaApp() {
                     <CardDescription>Controle fino dos algoritmos</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div>
+                    <div className="space-y-2">
                       <div className="flex items-center justify-between text-sm">
                         <Label className="text-emerald-50">Anos de análise</Label>
-                        <span className="px-2 py-1 rounded-md bg-emerald-500/20 text-emerald-100 font-semibold">
-                          {anosAnalise[0]}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="number"
+                            min={1}
+                            max={10}
+                            value={anosAnalise[0]}
+                            onChange={(e) => {
+                              const v = Math.min(10, Math.max(1, Number(e.target.value) || 1))
+                              setAnosAnalise([v])
+                            }}
+                            className="w-16 h-9 bg-white/5 border-white/20 text-white text-sm"
+                          />
+                          <span className="px-2 py-1 rounded-md bg-emerald-500/20 text-emerald-100 font-semibold">
+                            {anosAnalise[0]}
+                          </span>
+                        </div>
                       </div>
                       <Slider
                         value={anosAnalise}
@@ -280,15 +293,28 @@ export default function MegaSenaApp() {
                         max={10}
                         min={1}
                         step={1}
-                        className="mt-2"
+                        className="mt-1"
                       />
                     </div>
-                    <div>
+                    <div className="space-y-2">
                       <div className="flex items-center justify-between text-sm">
                         <Label className="text-emerald-50">Quantidade de jogos</Label>
-                        <span className="px-2 py-1 rounded-md bg-emerald-500/20 text-emerald-100 font-semibold">
-                          {quantidadeJogos}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="number"
+                            min={1}
+                            max={20}
+                            value={quantidadeJogos}
+                            onChange={(e) => {
+                              const v = Math.min(20, Math.max(1, Number(e.target.value) || 1))
+                              setQuantidadeJogos(v)
+                            }}
+                            className="w-16 h-9 bg-white/5 border-white/20 text-white text-sm"
+                          />
+                          <span className="px-2 py-1 rounded-md bg-emerald-500/20 text-emerald-100 font-semibold">
+                            {quantidadeJogos}
+                          </span>
+                        </div>
                       </div>
                       <Slider
                         value={[quantidadeJogos]}
@@ -296,7 +322,7 @@ export default function MegaSenaApp() {
                         max={20}
                         min={1}
                         step={1}
-                        className="mt-2"
+                        className="mt-1"
                       />
                     </div>
                     <Separator className="bg-white/10" />
