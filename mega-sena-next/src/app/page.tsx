@@ -219,7 +219,12 @@ export default function MegaSenaApp() {
               <div className="flex items-center gap-2 text-emerald-300 text-sm font-semibold">
                 <Sparkles className="w-4 h-4" /> {isDark ? "Premium Dark" : "Tema Claro"}
               </div>
-              <h1 className={`text-3xl md:text-4xl font-bold mt-2 ${isDark ? "text-white" : "text-slate-900"}`}>
+              <h1
+                className={`text-3xl md:text-4xl font-bold mt-2 flex items-center gap-2 ${
+                  isDark ? "text-emerald-300" : "text-emerald-600"
+                }`}
+              >
+                <span role="img" aria-label="trevo">🍀</span>
                 Gerador Inteligente - Mega-Sena
           </h1>
               <p className={isDark ? "text-emerald-100/80 mt-1" : "text-slate-600 mt-1"}>
