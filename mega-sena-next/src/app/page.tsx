@@ -1,19 +1,29 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Label } from "@/components/ui/label"
-import { Slider } from "@/components/ui/slider"
-import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
-import { Separator } from "@/components/ui/separator"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
-import { Shuffle, TrendingUp, Clock, Users, Target, CheckCircle, XCircle } from 'lucide-react'
-import { buscarTodosConcursos, buscarUltimoConcurso, salvarJogo, Concurso } from '@/lib/supabase'
+import { useState, useEffect, useMemo } from 'react'
+import {
+  Tabs, TabsContent, TabsList, TabsTrigger
+} from '@/components/ui/tabs'
+import {
+  Card, CardContent, CardDescription, CardHeader, CardTitle
+} from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Label } from '@/components/ui/label'
+import { Slider } from '@/components/ui/slider'
+import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
+import { Separator } from '@/components/ui/separator'
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
+} from 'recharts'
+import {
+  Shuffle, TrendingUp, Clock, Users, Target, CheckCircle,
+  Sparkles, Settings, Database, Activity, Save, Copy
+} from 'lucide-react'
+import {
+  buscarTodosConcursos, buscarUltimoConcurso, salvarJogo, Concurso
+} from '@/lib/supabase'
 import { AnalisadorMegaSena, GeradorJogos } from '@/lib/algoritmos'
 
 export default function MegaSenaApp() {
@@ -74,16 +84,14 @@ export default function MegaSenaApp() {
     const freq = analisador.calcularFrequencias()
     const atrasos = analisador.calcularAtrasos()
 
-    // Top 10 mais frequentes
     const topFrequentes = Array.from(freq.entries())
       .sort((a, b) => b[1] - a[1])
-      .slice(0, 10)
+      .slice(0, 6)
       .map(([dezena, frequencia]) => ({ dezena, frequencia }))
 
-    // Top 10 mais atrasados
     const topAtrasados = Array.from(atrasos.entries())
       .sort((a, b) => b[1] - a[1])
-      .slice(0, 10)
+      .slice(0, 6)
       .map(([dezena, atraso]) => ({ dezena, atraso }))
 
     setEstatisticas({
@@ -93,26 +101,21 @@ export default function MegaSenaApp() {
       frequenciasChart: Array.from(freq.entries()).map(([dezena, frequencia]) => ({
         dezena: dezena.toString(),
         frequencia
-      })),
-      atrasosChart: Array.from(atrasos.entries()).map(([dezena, atraso]) => ({
-        dezena: dezena.toString(),
-        atraso
       }))
     })
   }
 
+  const algoritmosAtivos = useMemo(
+    () => Object.entries(algoritmos).filter(([, ativo]) => ativo).map(([k]) => k),
+    [algoritmos]
+  )
+
   const gerarJogos = () => {
     if (!gerador) return
-
-    const algoritmosAtivos = Object.entries(algoritmos)
-      .filter(([_, ativo]) => ativo)
-      .map(([alg]) => alg)
-
     if (algoritmosAtivos.length === 0) {
       alert('Selecione pelo menos um algoritmo!')
       return
     }
-
     const resultado = gerador.gerarJogos(
       quantidadeJogos,
       algoritmosAtivos,
@@ -120,23 +123,16 @@ export default function MegaSenaApp() {
       numerosFixos,
       numerosRemovidos
     )
-
     setJogosGerados(resultado.jogos)
     setAlgoritmosUsados(resultado.algoritmosUsados)
   }
 
   const salvarJogos = async () => {
     if (jogosGerados.length === 0) return
-
     try {
-      const algoritmosAtivos = Object.entries(algoritmos)
-        .filter(([_, ativo]) => ativo)
-        .map(([alg]) => alg)
-
       for (let i = 0; i < jogosGerados.length; i++) {
         await salvarJogo(jogosGerados[i], [algoritmosUsados[i] || 'Misto'])
       }
-
       alert(`${jogosGerados.length} jogos salvos com sucesso!`)
     } catch (error) {
       console.error('Erro ao salvar jogos:', error)
@@ -144,73 +140,110 @@ export default function MegaSenaApp() {
     }
   }
 
-  const adicionarNumeroFixo = (numero: number) => {
-    if (!numerosFixos.includes(numero) && !numerosRemovidos.includes(numero)) {
-      setNumerosFixos([...numerosFixos, numero])
-    }
+  const handleInput = (
+    value: string,
+    addFn: (n: number) => void
+  ) => {
+    const nums = value.split(',')
+      .map(n => parseInt(n.trim()))
+      .filter(n => n >= 1 && n <= 60)
+    nums.forEach(addFn)
   }
 
-  const removerNumeroFixo = (numero: number) => {
-    setNumerosFixos(numerosFixos.filter(n => n !== numero))
-  }
-
-  const adicionarNumeroRemovido = (numero: number) => {
-    if (!numerosFixos.includes(numero) && !numerosRemovidos.includes(numero)) {
-      setNumerosRemovidos([...numerosRemovidos, numero])
-    }
-  }
-
-  const removerNumeroRemovido = (numero: number) => {
-    setNumerosRemovidos(numerosRemovidos.filter(n => n !== numero))
-  }
+  const removerNumeroFixo = (n: number) => setNumerosFixos(numerosFixos.filter(i => i !== n))
+  const removerNumeroRemovido = (n: number) => setNumerosRemovidos(numerosRemovidos.filter(i => i !== n))
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Carregando dados...</p>
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#0f1419] via-[#0f1a26] to-[#111827] text-white">
+        <div className="text-center space-y-3">
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-emerald-400 border-t-transparent mx-auto" />
+          <p className="text-emerald-200">Carregando dados...</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50 dark:from-gray-900 dark:to-gray-800">
-      <div className="container mx-auto px-4 py-8">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-green-600 dark:text-green-400 mb-2">
-            🍀 Gerador Mega-Sena
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400">
-            Algoritmos inteligentes para otimizar suas chances
-          </p>
+    <div className="min-h-screen bg-gradient-to-br from-[#0f1419] via-[#0f1a26] to-[#111827] text-white">
+      <div className="max-w-6xl mx-auto px-4 py-8">
+        {/* Hero */}
+        <div className="mb-8 rounded-2xl bg-white/5 border border-white/10 shadow-xl backdrop-blur-lg p-6">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2 text-emerald-300 text-sm font-semibold">
+                <Sparkles className="w-4 h-4" /> Premium Dark
+              </div>
+              <h1 className="text-3xl md:text-4xl font-bold text-white mt-2">
+                Gerador Inteligente - Mega-Sena
+              </h1>
+              <p className="text-emerald-100/80 mt-1">
+                Algoritmos combinados, balanceamento e Supabase integrado
+              </p>
+            </div>
+
+            {ultimoConcurso && (
+              <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-3">
+                <div className="text-sm text-emerald-200">Último concurso</div>
+                <div className="text-2xl font-bold text-white">#{ultimoConcurso.numero}</div>
+                <div className="text-xs text-emerald-100/80">
+                  {new Date(ultimoConcurso.data).toLocaleDateString('pt-BR')}
+                </div>
+                <div className="flex gap-2 mt-2 flex-wrap">
+                  {[ultimoConcurso.dezena1, ultimoConcurso.dezena2, ultimoConcurso.dezena3,
+                    ultimoConcurso.dezena4, ultimoConcurso.dezena5, ultimoConcurso.dezena6].map((n) => (
+                    <div
+                      key={n}
+                      className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-500 to-green-400 text-black font-semibold flex items-center justify-center shadow-lg"
+                    >
+                      {n.toString().padStart(2, '0')}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-3 text-sm text-emerald-100/80">
+            <div className="flex items-center gap-2">
+              <CheckCircle className="w-4 h-4 text-emerald-400" />
+              Supabase conectado ({concursos.length} concursos)
+            </div>
+            <div className="flex items-center gap-2">
+              <Activity className="w-4 h-4 text-emerald-400" />
+              Algoritmos: {algoritmosAtivos.join(', ')}
+            </div>
+            <div className="flex items-center gap-2">
+              <Database className="w-4 h-4 text-emerald-400" />
+              Período: {concursos.length > 0 && `${new Date(concursos[0].data).getFullYear()} - ${new Date(concursos[concursos.length - 1].data).getFullYear()}`}
+            </div>
+          </div>
         </div>
 
         <Tabs defaultValue="gerar" className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-4 bg-white/5 text-emerald-100 border border-white/10">
             <TabsTrigger value="gerar">🎰 Gerar Jogos</TabsTrigger>
             <TabsTrigger value="estatisticas">📊 Estatísticas</TabsTrigger>
             <TabsTrigger value="jogos">💾 Meus Jogos</TabsTrigger>
             <TabsTrigger value="config">⚙️ Config</TabsTrigger>
           </TabsList>
 
-          {/* Aba Gerar Jogos */}
-          <TabsContent value="gerar" className="space-y-6">
+          {/* Gerar */}
+          <TabsContent value="gerar" className="mt-6 space-y-6">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Configurações */}
-              <div className="lg:col-span-1 space-y-6">
-                <Card>
+              {/* Config */}
+              <div className="space-y-4">
+                <Card className="bg-white/5 border-white/10 shadow-lg">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <Target className="w-5 h-5" />
+                      <Target className="w-5 h-5 text-emerald-400" />
                       Configurações
                     </CardTitle>
+                    <CardDescription>Controle fino dos algoritmos</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div>
-                      <Label>Anos de análise: {anosAnalise[0]}</Label>
+                      <Label className="text-emerald-100">Anos de análise: {anosAnalise[0]}</Label>
                       <Slider
                         value={anosAnalise}
                         onValueChange={setAnosAnalise}
@@ -220,113 +253,52 @@ export default function MegaSenaApp() {
                         className="mt-2"
                       />
                     </div>
-
                     <div>
-                      <Label>Quantidade de jogos: {quantidadeJogos}</Label>
+                      <Label className="text-emerald-100">Quantidade de jogos: {quantidadeJogos}</Label>
                       <Slider
                         value={[quantidadeJogos]}
-                        onValueChange={(value) => setQuantidadeJogos(value[0])}
+                        onValueChange={(v) => setQuantidadeJogos(v[0])}
                         max={20}
                         min={1}
                         step={1}
                         className="mt-2"
                       />
                     </div>
-
-                    <Separator />
-
+                    <Separator className="bg-white/10" />
                     <div className="space-y-3">
-                      <Label className="text-sm font-medium">Algoritmos:</Label>
-
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id="freq"
-                          checked={algoritmos.frequencia}
-                          onCheckedChange={(checked) =>
-                            setAlgoritmos({...algoritmos, frequencia: checked as boolean})
-                          }
-                        />
-                        <Label htmlFor="freq" className="flex items-center gap-2">
-                          <TrendingUp className="w-4 h-4" />
-                          Frequência
-                        </Label>
-                      </div>
-
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id="markov"
-                          checked={algoritmos.markov}
-                          onCheckedChange={(checked) =>
-                            setAlgoritmos({...algoritmos, markov: checked as boolean})
-                          }
-                        />
-                        <Label htmlFor="markov" className="flex items-center gap-2">
-                          <Shuffle className="w-4 h-4" />
-                          Markov
-                        </Label>
-                      </div>
-
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id="cooc"
-                          checked={algoritmos.coocorrencia}
-                          onCheckedChange={(checked) =>
-                            setAlgoritmos({...algoritmos, coocorrencia: checked as boolean})
-                          }
-                        />
-                        <Label htmlFor="cooc" className="flex items-center gap-2">
-                          <Users className="w-4 h-4" />
-                          Coocorrência
-                        </Label>
-                      </div>
-
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id="atraso"
-                          checked={algoritmos.atraso}
-                          onCheckedChange={(checked) =>
-                            setAlgoritmos({...algoritmos, atraso: checked as boolean})
-                          }
-                        />
-                        <Label htmlFor="atraso" className="flex items-center gap-2">
-                          <Clock className="w-4 h-4" />
-                          Atrasados
-                        </Label>
-                      </div>
-
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id="balanceado"
-                          checked={algoritmos.balanceado}
-                          onCheckedChange={(checked) =>
-                            setAlgoritmos({...algoritmos, balanceado: checked as boolean})
-                          }
-                        />
-                        <Label htmlFor="balanceado">⚖️ Balanceado</Label>
-                      </div>
-
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id="uniforme"
-                          checked={algoritmos.uniforme}
-                          onCheckedChange={(checked) =>
-                            setAlgoritmos({...algoritmos, uniforme: checked as boolean})
-                          }
-                        />
-                        <Label htmlFor="uniforme">🎲 Uniforme</Label>
-                      </div>
+                      <Label className="text-emerald-100 text-sm">Algoritmos</Label>
+                      {[
+                        { id: 'freq', label: 'Frequência', icon: <TrendingUp className="w-4 h-4" />, key: 'frequencia' },
+                        { id: 'markov', label: 'Markov', icon: <Shuffle className="w-4 h-4" />, key: 'markov' },
+                        { id: 'cooc', label: 'Coocorrência', icon: <Users className="w-4 h-4" />, key: 'coocorrencia' },
+                        { id: 'atraso', label: 'Atrasados', icon: <Clock className="w-4 h-4" />, key: 'atraso' },
+                        { id: 'balanceado', label: 'Balanceado', icon: <Settings className="w-4 h-4" />, key: 'balanceado' },
+                        { id: 'uniforme', label: 'Uniforme', icon: <Shuffle className="w-4 h-4" />, key: 'uniforme' },
+                      ].map(item => (
+                        <div key={item.id} className="flex items-center space-x-2">
+                          <Checkbox
+                            id={item.id}
+                            checked={(algoritmos as any)[item.key]}
+                            onCheckedChange={(checked) => setAlgoritmos({
+                              ...algoritmos,
+                              [item.key]: checked as boolean
+                            })}
+                          />
+                          <Label htmlFor={item.id} className="flex items-center gap-2 text-sm">
+                            {item.icon} {item.label}
+                          </Label>
+                        </div>
+                      ))}
                     </div>
-
-                    <Separator />
-
+                    <Separator className="bg-white/10" />
                     <div className="space-y-3">
-                      <Label>Números Fixos:</Label>
+                      <Label className="text-emerald-100">Números Fixos</Label>
                       <div className="flex flex-wrap gap-1">
                         {numerosFixos.map(num => (
                           <Badge
                             key={num}
-                            variant="default"
-                            className="cursor-pointer"
+                            variant="outline"
+                            className="bg-emerald-500/20 border-emerald-400/50 text-emerald-100 cursor-pointer"
                             onClick={() => removerNumeroFixo(num)}
                           >
                             {num.toString().padStart(2, '0')}
@@ -334,25 +306,28 @@ export default function MegaSenaApp() {
                         ))}
                       </div>
                       <Input
-                        placeholder="Digite números (ex: 5,12,23)"
+                        className="bg-white/5 border-white/10 text-white placeholder:text-white/50"
+                        placeholder="Ex: 5,12,23"
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
-                            const nums = e.currentTarget.value.split(',').map(n => parseInt(n.trim())).filter(n => n >= 1 && n <= 60)
-                            nums.forEach(num => adicionarNumeroFixo(num))
+                            handleInput(e.currentTarget.value, (n) => {
+                              if (!numerosFixos.includes(n) && !numerosRemovidos.includes(n)) {
+                                setNumerosFixos([...numerosFixos, n])
+                              }
+                            })
                             e.currentTarget.value = ''
                           }
                         }}
                       />
                     </div>
-
                     <div className="space-y-3">
-                      <Label>Números Removidos:</Label>
+                      <Label className="text-emerald-100">Números Removidos</Label>
                       <div className="flex flex-wrap gap-1">
                         {numerosRemovidos.map(num => (
                           <Badge
                             key={num}
                             variant="destructive"
-                            className="cursor-pointer"
+                            className="bg-red-500/20 border-red-400/50 text-red-100 cursor-pointer"
                             onClick={() => removerNumeroRemovido(num)}
                           >
                             {num.toString().padStart(2, '0')}
@@ -360,111 +335,87 @@ export default function MegaSenaApp() {
                         ))}
                       </div>
                       <Input
-                        placeholder="Digite números (ex: 1,2,3)"
+                        className="bg-white/5 border-white/10 text-white placeholder:text-white/50"
+                        placeholder="Ex: 1,2,3"
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
-                            const nums = e.currentTarget.value.split(',').map(n => parseInt(n.trim())).filter(n => n >= 1 && n <= 60)
-                            nums.forEach(num => adicionarNumeroRemovido(num))
+                            handleInput(e.currentTarget.value, (n) => {
+                              if (!numerosFixos.includes(n) && !numerosRemovidos.includes(n)) {
+                                setNumerosRemovidos([...numerosRemovidos, n])
+                              }
+                            })
                             e.currentTarget.value = ''
                           }
                         }}
                       />
                     </div>
-
-                    <Button onClick={gerarJogos} className="w-full" size="lg">
+                    <Button onClick={gerarJogos} className="w-full bg-emerald-500 hover:bg-emerald-600 text-black font-semibold">
                       🍀 GERAR JOGOS
                     </Button>
                   </CardContent>
                 </Card>
-
-                {/* Último Concurso */}
-                {ultimoConcurso && (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-lg">🏆 Último Concurso</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-center">
-                        <div className="text-2xl font-bold text-green-600">
-                          #{ultimoConcurso.numero}
-                        </div>
-                        <div className="text-sm text-gray-600 mb-4">
-                          {new Date(ultimoConcurso.data).toLocaleDateString('pt-BR')}
-                        </div>
-                        <div className="flex flex-wrap justify-center gap-2">
-                          {[ultimoConcurso.dezena1, ultimoConcurso.dezena2, ultimoConcurso.dezena3,
-                            ultimoConcurso.dezena4, ultimoConcurso.dezena5, ultimoConcurso.dezena6].map(num => (
-                            <div
-                              key={num}
-                              className="w-10 h-10 bg-green-500 text-white rounded-full flex items-center justify-center font-bold"
-                            >
-                              {num.toString().padStart(2, '0')}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
               </div>
 
               {/* Resultados */}
-              <div className="lg:col-span-2">
-                <Card>
+              <div className="lg:col-span-2 space-y-4">
+                <Card className="bg-white/5 border-white/10 shadow-lg">
                   <CardHeader>
-                    <CardTitle>Jogos Gerados</CardTitle>
-                    <CardDescription>
-                      {jogosGerados.length} jogos gerados • Algoritmos: {Object.entries(algoritmos).filter(([_, v]) => v).map(([k]) => k).join(', ')}
-                    </CardDescription>
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <CardTitle className="text-white">Jogos Gerados</CardTitle>
+                        <CardDescription className="text-emerald-100/80">
+                          {jogosGerados.length} jogos • Algoritmos: {algoritmosAtivos.join(', ')}
+                        </CardDescription>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button variant="outline" className="border-emerald-400/60 text-emerald-100" onClick={salvarJogos}>
+                          <Save className="w-4 h-4 mr-1" /> Salvar
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className="border-emerald-400/60 text-emerald-100"
+                          onClick={() => {
+                            if (jogosGerados.length === 0) return
+                            const text = jogosGerados.map((jogo, idx) => `Jogo ${idx + 1}: ${jogo.join(' ')}`).join('\n')
+                            navigator.clipboard.writeText(text)
+                          }}
+                        >
+                          <Copy className="w-4 h-4 mr-1" /> Copiar
+                        </Button>
+                      </div>
+                    </div>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="space-y-3">
                     {jogosGerados.length > 0 ? (
-                      <div className="space-y-4">
-                        {jogosGerados.map((jogo, idx) => (
-                          <div key={idx} className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                            <div className="flex items-center gap-4">
-                              <Badge variant="outline">
-                                {algoritmosUsados[idx] || 'Misto'}
-                              </Badge>
-                              <div className="flex gap-2">
-                                {jogo.map(num => (
-                                  <div
-                                    key={num}
-                                    className="w-8 h-8 bg-blue-500 text-white rounded-full flex items-center justify-center text-sm font-bold"
-                                  >
-                                    {num.toString().padStart(2, '0')}
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                            <div className="text-sm text-gray-600">
-                              Pares: {jogo.filter(n => n % 2 === 0).length} •
-                              Ímpares: {jogo.filter(n => n % 2 !== 0).length}
+                      jogosGerados.map((jogo, idx) => (
+                        <div
+                          key={idx}
+                          className="p-4 rounded-xl bg-white/5 border border-white/10 flex items-center justify-between flex-wrap gap-3"
+                        >
+                          <div className="flex items-center gap-3">
+                            <Badge className="bg-emerald-500/20 border-emerald-400/50 text-emerald-100">
+                              {algoritmosUsados[idx] || 'Misto'}
+                            </Badge>
+                            <div className="flex gap-2 flex-wrap">
+                              {jogo.map((num) => (
+                                <div
+                                  key={num}
+                                  className="w-9 h-9 bg-gradient-to-br from-emerald-500 to-green-400 text-black font-semibold rounded-full flex items-center justify-center shadow-md"
+                                >
+                                  {num.toString().padStart(2, '0')}
+                                </div>
+                              ))}
                             </div>
                           </div>
-                        ))}
-
-                        <div className="flex gap-2 pt-4">
-                          <Button onClick={salvarJogos} variant="outline">
-                            💾 Salvar Jogos
-                          </Button>
-                          <Button
-                            onClick={() => {
-                              const text = jogosGerados.map((jogo, idx) =>
-                                `Jogo ${idx + 1}: ${jogo.join(' ')}`
-                              ).join('\n')
-                              navigator.clipboard.writeText(text)
-                            }}
-                            variant="outline"
-                          >
-                            📋 Copiar
-                          </Button>
+                          <div className="text-xs text-emerald-100/80">
+                            Pares {jogo.filter(n => n % 2 === 0).length} • Ímpares {jogo.filter(n => n % 2 !== 0).length}
+                          </div>
                         </div>
-                      </div>
+                      ))
                     ) : (
-                      <div className="text-center py-8 text-gray-500">
-                        <Shuffle className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                        <p>Clique em "GERAR JOGOS" para começar</p>
+                      <div className="text-center py-10 text-emerald-100/70">
+                        <Shuffle className="w-10 h-10 mx-auto mb-3 opacity-70" />
+                        Clique em “Gerar Jogos” para começar
                       </div>
                     )}
                   </CardContent>
@@ -473,53 +424,51 @@ export default function MegaSenaApp() {
             </div>
           </TabsContent>
 
-          {/* Aba Estatísticas */}
-          <TabsContent value="estatisticas" className="space-y-6">
+          {/* Estatísticas */}
+          <TabsContent value="estatisticas" className="mt-6 space-y-6">
             {estatisticas && (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <Card>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <Card className="bg-white/5 border-white/10 shadow-lg lg:col-span-1">
                   <CardHeader>
-                    <CardTitle>🔥 Números Mais Frequentes</CardTitle>
+                    <CardTitle className="text-white">🔥 Top Frequentes</CardTitle>
+                    <CardDescription className="text-emerald-100/80">6 números mais sorteados</CardDescription>
                   </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2">
-                      {estatisticas.topFrequentes.map((item: any) => (
-                        <div key={item.dezena} className="flex justify-between">
-                          <span className="font-mono">{item.dezena.toString().padStart(2, '0')}</span>
-                          <span className="font-bold">{item.frequencia}x</span>
-                        </div>
-                      ))}
-                    </div>
+                  <CardContent className="space-y-2">
+                    {estatisticas.topFrequentes.map((item: any) => (
+                      <div key={item.dezena} className="flex justify-between text-emerald-50">
+                        <span className="font-mono text-sm">{item.dezena.toString().padStart(2, '0')}</span>
+                        <span className="font-semibold">{item.frequencia}x</span>
+                      </div>
+                    ))}
                   </CardContent>
                 </Card>
 
-                <Card>
+                <Card className="bg-white/5 border-white/10 shadow-lg lg:col-span-1">
                   <CardHeader>
-                    <CardTitle>❄️ Números Mais Atrasados</CardTitle>
+                    <CardTitle className="text-white">❄️ Top Atrasados</CardTitle>
+                    <CardDescription className="text-emerald-100/80">6 números mais atrasados</CardDescription>
                   </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2">
-                      {estatisticas.topAtrasados.map((item: any) => (
-                        <div key={item.dezena} className="flex justify-between">
-                          <span className="font-mono">{item.dezena.toString().padStart(2, '0')}</span>
-                          <span className="font-bold">{item.atraso} sorteios</span>
-                        </div>
-                      ))}
-                    </div>
+                  <CardContent className="space-y-2">
+                    {estatisticas.topAtrasados.map((item: any) => (
+                      <div key={item.dezena} className="flex justify-between text-emerald-50">
+                        <span className="font-mono text-sm">{item.dezena.toString().padStart(2, '0')}</span>
+                        <span className="font-semibold">{item.atraso} sorteios</span>
+                      </div>
+                    ))}
                   </CardContent>
                 </Card>
 
-                <Card className="lg:col-span-2">
+                <Card className="bg-white/5 border-white/10 shadow-lg lg:col-span-3">
                   <CardHeader>
-                    <CardTitle>📊 Frequência por Número</CardTitle>
+                    <CardTitle className="text-white">📊 Frequência por Número</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <ResponsiveContainer width="100%" height={300}>
                       <BarChart data={estatisticas.frequenciasChart}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="dezena" />
-                        <YAxis />
-                        <Tooltip />
+                        <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                        <XAxis dataKey="dezena" stroke="#9ca3af" />
+                        <YAxis stroke="#9ca3af" />
+                        <Tooltip contentStyle={{ background: '#0f172a', border: '1px solid #10b981', color: 'white' }} />
                         <Bar dataKey="frequencia" fill="#10b981" />
                       </BarChart>
                     </ResponsiveContainer>
@@ -529,52 +478,45 @@ export default function MegaSenaApp() {
             )}
           </TabsContent>
 
-          {/* Aba Meus Jogos */}
-          <TabsContent value="jogos" className="space-y-6">
-            <Card>
+          {/* Meus Jogos */}
+          <TabsContent value="jogos" className="mt-6">
+            <Card className="bg-white/5 border-white/10 shadow-lg">
               <CardHeader>
-                <CardTitle>💾 Jogos Salvos</CardTitle>
-                <CardDescription>
+                <CardTitle className="text-white">💾 Jogos Salvos</CardTitle>
+                <CardDescription className="text-emerald-100/80">
                   Seus jogos armazenados na nuvem
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <p className="text-gray-600">Funcionalidade em desenvolvimento...</p>
+                <p className="text-emerald-100/70 text-sm">Funcionalidade em desenvolvimento...</p>
               </CardContent>
             </Card>
           </TabsContent>
 
-          {/* Aba Config */}
-          <TabsContent value="config" className="space-y-6">
-            <Card>
+          {/* Config */}
+          <TabsContent value="config" className="mt-6">
+            <Card className="bg-white/5 border-white/10 shadow-lg">
               <CardHeader>
-                <CardTitle>⚙️ Configurações do Sistema</CardTitle>
+                <CardTitle className="text-white">⚙️ Configurações do Sistema</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label>Total de Concursos</Label>
-                    <div className="text-2xl font-bold text-green-600">
-                      {concursos.length}
+              <CardContent className="space-y-4 text-emerald-50">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="p-3 rounded-lg bg-white/5 border border-white/10">
+                    <div className="text-sm text-emerald-100/70">Total de Concursos</div>
+                    <div className="text-2xl font-bold text-white">{concursos.length}</div>
+                  </div>
+                  <div className="p-3 rounded-lg bg-white/5 border border-white/10">
+                    <div className="text-sm text-emerald-100/70">Status Supabase</div>
+                    <div className="flex items-center gap-2 text-emerald-400 font-semibold">
+                      <CheckCircle className="w-4 h-4" /> Conectado
                     </div>
                   </div>
-                  <div>
-                    <Label>Status Supabase</Label>
-                    <div className="flex items-center gap-2">
-                      <CheckCircle className="w-5 h-5 text-green-500" />
-                      <span className="text-green-600">Conectado</span>
+                  <div className="p-3 rounded-lg bg-white/5 border border-white/10">
+                    <div className="text-sm text-emerald-100/70">Período de Dados</div>
+                    <div className="text-sm">
+                      {concursos.length > 0 &&
+                        `${new Date(concursos[0].data).toLocaleDateString('pt-BR')} - ${new Date(concursos[concursos.length - 1].data).toLocaleDateString('pt-BR')}`}
                     </div>
-                  </div>
-                </div>
-
-                <Separator />
-
-                <div>
-                  <Label>Período de Dados</Label>
-                  <div className="text-gray-600">
-                    {concursos.length > 0 &&
-                      `${new Date(concursos[0].data).toLocaleDateString('pt-BR')} - ${new Date(concursos[concursos.length - 1].data).toLocaleDateString('pt-BR')}`
-                    }
                   </div>
                 </div>
               </CardContent>
