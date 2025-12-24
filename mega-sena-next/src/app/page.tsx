@@ -1501,60 +1501,6 @@ export default function MegaSenaApp() {
                 </CardContent>
               </Card>
 
-              {/* Tabela de Puxadas */}
-              <Card className={cardClass}>
-                <CardHeader>
-                  <CardTitle className={isDark ? "text-white" : "text-slate-900"}>🔗 Tabela de Puxadas</CardTitle>
-                  <CardDescription className={isDark ? "text-amber-100/80" : "text-slate-600"}>
-                    Qual animal "puxa" quais outros
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-1 gap-1 text-sm max-h-[400px] overflow-y-auto">
-                    {[
-                      { animal: "Avestruz", emoji: "🦢", puxa: "Vaca, Águia, Galo, Pavão, Peru" },
-                      { animal: "Águia", emoji: "🦅", puxa: "Coelho, Avestruz, Galo, Pavão, Peru" },
-                      { animal: "Burro", emoji: "🫏", puxa: "Cavalo, Elefante, Touro, Veado, Coelho" },
-                      { animal: "Borboleta", emoji: "🦋", puxa: "Cabra, Elefante, Gato, Leão, Cachorro" },
-                      { animal: "Cachorro", emoji: "🐕", puxa: "Galo, Gato, Camelo, Macaco, Porco" },
-                      { animal: "Cabra", emoji: "🐐", puxa: "Carneiro, Macaco, Elefante, Touro, Tigre" },
-                      { animal: "Carneiro", emoji: "🐏", puxa: "Cabra, Coelho, Vaca" },
-                      { animal: "Camelo", emoji: "🐫", puxa: "Cachorro, Elefante, Urso" },
-                      { animal: "Cobra", emoji: "🐍", puxa: "Jacaré, Porco, Burro, Gato" },
-                      { animal: "Coelho", emoji: "🐇", puxa: "Carneiro, Águia, Burro" },
-                      { animal: "Cavalo", emoji: "🐴", puxa: "Burro, Elefante, Touro" },
-                      { animal: "Elefante", emoji: "🐘", puxa: "Burro, Cabra, Camelo, Cavalo" },
-                      { animal: "Galo", emoji: "🐓", puxa: "Avestruz, Águia, Borboleta, Cachorro" },
-                      { animal: "Gato", emoji: "🐱", puxa: "Borboleta, Cachorro, Cobra, Carneiro" },
-                      { animal: "Jacaré", emoji: "🐊", puxa: "Cobra, Cabra" },
-                      { animal: "Leão", emoji: "🦁", puxa: "Borboleta, Tigre" },
-                      { animal: "Macaco", emoji: "🐒", puxa: "Cabra, Cachorro" },
-                      { animal: "Porco", emoji: "🐷", puxa: "Cachorro, Cobra" },
-                      { animal: "Pavão", emoji: "🦚", puxa: "Avestruz, Águia, Cachorro" },
-                      { animal: "Peru", emoji: "🦃", puxa: "Avestruz, Águia" },
-                      { animal: "Touro", emoji: "🐂", puxa: "Burro, Cabra, Cavalo" },
-                      { animal: "Tigre", emoji: "🐅", puxa: "Cabra, Leão" },
-                      { animal: "Urso", emoji: "🐻", puxa: "Cabra, Camelo" },
-                      { animal: "Veado", emoji: "🦌", puxa: "Burro" },
-                      { animal: "Vaca", emoji: "🐄", puxa: "Avestruz, Carneiro" },
-                    ].map((item, idx) => (
-                      <div
-                        key={idx}
-                        className={`flex items-center justify-between p-2 rounded-lg ${isDark ? "bg-white/5 hover:bg-white/10" : "bg-slate-50 hover:bg-slate-100"} transition`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="text-lg">{item.emoji}</span>
-                          <span className={`font-medium ${isDark ? "text-white" : "text-slate-900"}`}>{item.animal}</span>
-                        </div>
-                        <span className={`text-xs ${isDark ? "text-amber-200/80" : "text-amber-700"}`}>
-                          {item.puxa}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-
               {/* Resultados Atualizados */}
               <Card className={cardClass}>
                 <CardHeader>
@@ -1672,131 +1618,107 @@ export default function MegaSenaApp() {
               </Card>
             </div>
 
-            {/* Gerador de Palpites - Agora em destaque abaixo dos resultados */}
-            <Card className={`${cardClass} overflow-hidden`}>
-              <CardHeader className={`${isDark ? "bg-gradient-to-r from-orange-600/20 to-amber-600/20 border-b border-orange-500/20" : "bg-gradient-to-r from-orange-100 to-amber-100 border-b border-orange-200"}`}>
-                <CardTitle className={isDark ? "text-orange-100" : "text-orange-900"}>🎲 Gerador de Palpites</CardTitle>
-                <CardDescription className={isDark ? "text-orange-200/80" : "text-orange-700"}>
-                  Gera números baseados na estrutura do jogo
-                </CardDescription>
+            {/* Gerador de Palpites - Design compacto e profissional */}
+            <Card className={cardClass}>
+              <CardHeader className="pb-2">
+                <CardTitle className={`text-base ${isDark ? "text-white" : "text-slate-900"}`}>🎲 Gerador de Palpites</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4 pt-4">
-                {/* Resultado do Palpite */}
+              <CardContent className="space-y-3">
+                {/* Resultado do Palpite - Compacto */}
                 {palpiteBicho && (
-                  <div className={`rounded-2xl p-5 ${isDark ? "bg-gradient-to-br from-orange-900/40 to-amber-900/30 border-2 border-orange-500/50" : "bg-gradient-to-br from-orange-100 to-amber-50 border-2 border-orange-300"}`}>
-                    {/* Animal */}
-                    <div className="flex items-center gap-4 mb-5">
-                      <div className={`w-16 h-16 rounded-2xl ${isDark ? "bg-gradient-to-br from-orange-500 to-amber-500" : "bg-gradient-to-br from-orange-400 to-amber-400"} flex items-center justify-center text-4xl shadow-xl`}>
+                  <div className={`rounded-lg p-3 ${isDark ? "bg-slate-800 border border-slate-700" : "bg-slate-50 border border-slate-200"}`}>
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className={`w-10 h-10 rounded-lg ${isDark ? "bg-orange-600" : "bg-orange-500"} flex items-center justify-center text-xl`}>
                         {palpiteBicho.emoji}
                       </div>
                       <div>
-                        <div className={`text-sm font-bold uppercase tracking-wider ${isDark ? "text-orange-300" : "text-orange-600"}`}>
+                        <div className={`text-xs ${isDark ? "text-slate-400" : "text-slate-500"}`}>
                           Grupo {palpiteBicho.grupo.toString().padStart(2, '0')}
                         </div>
-                        <div className={`text-2xl font-black ${isDark ? "text-white" : "text-slate-900"}`}>
+                        <div className={`text-lg font-bold ${isDark ? "text-white" : "text-slate-900"}`}>
                           {palpiteBicho.animal}
                         </div>
                       </div>
                     </div>
-
-                    {/* Números */}
-                    <div className="grid grid-cols-3 gap-3">
-                      <div className={`rounded-xl p-3 text-center ${isDark ? "bg-slate-900/60 border border-orange-500/30" : "bg-white border border-orange-200"}`}>
-                        <div className={`text-xs font-bold mb-1 ${isDark ? "text-orange-400" : "text-orange-600"}`}>DEZENA</div>
-                        <div className={`text-2xl font-black ${isDark ? "text-orange-100" : "text-orange-900"}`}>{palpiteBicho.dezena}</div>
-                        <div className={`text-xs font-semibold ${isDark ? "text-emerald-400" : "text-emerald-600"}`}>60x</div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className={`rounded-md p-2 text-center ${isDark ? "bg-slate-700" : "bg-white border border-slate-200"}`}>
+                        <div className={`text-[10px] ${isDark ? "text-slate-400" : "text-slate-500"}`}>DEZENA</div>
+                        <div className={`text-lg font-bold ${isDark ? "text-white" : "text-slate-900"}`}>{palpiteBicho.dezena}</div>
                       </div>
-                      <div className={`rounded-xl p-3 text-center ${isDark ? "bg-slate-900/60 border border-orange-500/30" : "bg-white border border-orange-200"}`}>
-                        <div className={`text-xs font-bold mb-1 ${isDark ? "text-orange-400" : "text-orange-600"}`}>CENTENA</div>
-                        <div className={`text-2xl font-black ${isDark ? "text-orange-100" : "text-orange-900"}`}>{palpiteBicho.centena}</div>
-                        <div className={`text-xs font-semibold ${isDark ? "text-emerald-400" : "text-emerald-600"}`}>600x</div>
+                      <div className={`rounded-md p-2 text-center ${isDark ? "bg-slate-700" : "bg-white border border-slate-200"}`}>
+                        <div className={`text-[10px] ${isDark ? "text-slate-400" : "text-slate-500"}`}>CENTENA</div>
+                        <div className={`text-lg font-bold ${isDark ? "text-white" : "text-slate-900"}`}>{palpiteBicho.centena}</div>
                       </div>
-                      <div className={`rounded-xl p-3 text-center ${isDark ? "bg-slate-900/60 border border-orange-500/30" : "bg-white border border-orange-200"}`}>
-                        <div className={`text-xs font-bold mb-1 ${isDark ? "text-orange-400" : "text-orange-600"}`}>MILHAR</div>
-                        <div className={`text-2xl font-black ${isDark ? "text-orange-100" : "text-orange-900"}`}>{palpiteBicho.milhar}</div>
-                        <div className={`text-xs font-semibold ${isDark ? "text-emerald-400" : "text-emerald-600"}`}>4000x</div>
+                      <div className={`rounded-md p-2 text-center ${isDark ? "bg-slate-700" : "bg-white border border-slate-200"}`}>
+                        <div className={`text-[10px] ${isDark ? "text-slate-400" : "text-slate-500"}`}>MILHAR</div>
+                        <div className={`text-lg font-bold ${isDark ? "text-white" : "text-slate-900"}`}>{palpiteBicho.milhar}</div>
                       </div>
                     </div>
                   </div>
                 )}
 
-                {/* Seletor de Estratégia - 4 opções baseadas em análise estatística */}
-                <div className={`rounded-xl p-3 ${isDark ? "bg-slate-800/50 border border-slate-700" : "bg-slate-100 border border-slate-200"}`}>
-                  <div className={`text-xs font-bold mb-2 ${isDark ? "text-orange-300" : "text-orange-700"}`}>🎯 Gerar Novo Palpite (Análise Set-Dez/2025):</div>
-                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-                    {[
-                      { id: 'quente', label: '🔥 Quente', desc: 'Peru 8.9%, Avestruz, Burro' },
-                      { id: 'frio', label: '❄️ Frio', desc: 'Porco 90d, Gato 76d, Cavalo' },
-                      { id: 'puxada', label: '🔗 Puxada', desc: 'Correlações reais (45%)' },
-                      { id: 'ciclo', label: '📅 Ciclo', desc: 'Padrão do dia do mês' },
-                    ].map((e) => (
-                      <button
-                        key={e.id}
-                        onClick={() => setEstrategiaBicho(e.id as any)}
-                        className={`p-2 rounded-lg text-left transition-all ${
-                          estrategiaBicho === e.id
-                            ? isDark
-                              ? "bg-orange-500/30 border-2 border-orange-500"
-                              : "bg-orange-200 border-2 border-orange-500"
-                            : isDark
-                              ? "bg-slate-700/50 border border-slate-600 hover:border-orange-500/50"
-                              : "bg-white border border-slate-300 hover:border-orange-400"
-                        }`}
-                      >
-                        <div className={`text-sm font-semibold ${isDark ? "text-white" : "text-slate-900"}`}>{e.label}</div>
-                        <div className={`text-[10px] ${isDark ? "text-slate-400" : "text-slate-500"}`}>{e.desc}</div>
-                      </button>
-                    ))}
-                  </div>
+                {/* Seletor de Estratégia - Compacto */}
+                <div className="grid grid-cols-4 gap-1">
+                  {[
+                    { id: 'quente', label: '🔥 Quente' },
+                    { id: 'frio', label: '❄️ Frio' },
+                    { id: 'puxada', label: '🔗 Puxada' },
+                    { id: 'ciclo', label: '📅 Ciclo' },
+                  ].map((e) => (
+                    <button
+                      key={e.id}
+                      onClick={() => setEstrategiaBicho(e.id as any)}
+                      className={`px-2 py-1.5 rounded text-xs font-medium transition-all ${
+                        estrategiaBicho === e.id
+                          ? isDark
+                            ? "bg-orange-600 text-white"
+                            : "bg-orange-500 text-white"
+                          : isDark
+                            ? "bg-slate-700 text-slate-300 hover:bg-slate-600"
+                            : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                      }`}
+                    >
+                      {e.label}
+                    </button>
+                  ))}
                 </div>
 
-                {/* PALPITE DO DIA - Fixo baseado na data */}
+                {/* PALPITE DO DIA - Compacto */}
                 {palpiteDoDia && palpiteDoDia.length > 0 && (
-                  <div className={`rounded-xl p-4 ${isDark ? "bg-gradient-to-br from-amber-900/40 to-orange-900/40 border-2 border-amber-500/50" : "bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-400"}`}>
-                    <div className={`text-sm font-bold mb-3 text-center ${isDark ? "text-amber-300" : "text-amber-700"}`}>
-                      ⭐ PALPITE DO DIA - {new Date().toLocaleDateString('pt-BR')}
+                  <div className={`rounded-lg p-3 ${isDark ? "bg-slate-800 border border-slate-700" : "bg-slate-50 border border-slate-200"}`}>
+                    <div className={`text-xs font-semibold mb-2 text-center ${isDark ? "text-amber-400" : "text-amber-600"}`}>
+                      ⭐ PALPITE DO DIA
                     </div>
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-3 gap-2">
                       {palpiteDoDia.map((p, idx) => (
                         <div
                           key={idx}
-                          className={`rounded-lg p-3 text-center ${
-                            idx === 0
-                              ? isDark ? "bg-blue-900/50 border border-blue-500/50" : "bg-blue-100 border border-blue-300"
-                              : idx === 1
-                              ? isDark ? "bg-red-900/50 border border-red-500/50" : "bg-red-100 border border-red-300"
-                              : isDark ? "bg-purple-900/50 border border-purple-500/50" : "bg-purple-100 border border-purple-300"
+                          className={`rounded-md p-2 text-center ${
+                            isDark ? "bg-slate-700" : "bg-white border border-slate-200"
                           }`}
                         >
-                          <div className="text-2xl mb-1">{p.emoji}</div>
-                          <div className={`font-bold text-sm ${isDark ? "text-white" : "text-slate-900"}`}>
+                          <div className="text-lg">{p.emoji}</div>
+                          <div className={`text-xs font-medium ${isDark ? "text-white" : "text-slate-900"}`}>
                             {p.grupo.toString().padStart(2, '0')} - {p.animal}
                           </div>
-                          <div className={`font-mono font-bold text-lg ${isDark ? "text-amber-300" : "text-amber-700"}`}>
+                          <div className={`font-mono font-bold ${isDark ? "text-amber-400" : "text-amber-600"}`}>
                             {p.milhar}
                           </div>
-                          <div className={`text-[10px] ${isDark ? "text-slate-400" : "text-slate-500"}`}>
-                            {idx === 0 ? "❄️ Frio" : idx === 1 ? "🔥 Quente" : "📅 Ciclo"}: {p.justificativa}
+                          <div className={`text-[9px] ${isDark ? "text-slate-500" : "text-slate-400"}`}>
+                            {idx === 0 ? "Frio" : idx === 1 ? "Quente" : "Ciclo"}
                           </div>
                         </div>
                       ))}
-                    </div>
-                    <div className={`text-[10px] text-center mt-2 ${isDark ? "text-amber-400/70" : "text-amber-600/70"}`}>
-                      Baseado em análise estatística Set-Dez/2025 • Não muda ao recarregar
                     </div>
                   </div>
                 )}
 
                 <Button
-                  className="w-full h-12 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold text-base shadow-xl shadow-orange-500/40"
+                  className={`w-full h-10 font-semibold ${isDark ? "bg-orange-600 hover:bg-orange-700" : "bg-orange-500 hover:bg-orange-600"} text-white`}
                   onClick={gerarPalpiteBicho}
                 >
                   🎲 {palpiteBicho ? "NOVO PALPITE" : "GERAR PALPITE"}
                 </Button>
-
-                <p className={`text-xs text-center ${isDark ? "text-slate-400" : "text-slate-500"}`}>
-                  ⚠️ Palpites são apenas sugestões aleatórias para entretenimento.
-                </p>
               </CardContent>
             </Card>
 
