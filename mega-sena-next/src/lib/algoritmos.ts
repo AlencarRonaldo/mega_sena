@@ -239,6 +239,7 @@ export class GeradorJogos {
 
     const scoresCombinados = new Map<number, number>()
     for (let d = DEZENA_MIN; d <= DEZENA_MAX; d++) {
+      // Não incluir números fixos nem removidos nos scores disponíveis
       if (numerosFixos.includes(d) || numerosRemovidos.includes(d)) continue
 
       const score =
@@ -251,33 +252,36 @@ export class GeradorJogos {
       scoresCombinados.set(d, score)
     }
 
-    const dezenasDisponiveis = Array.from(scoresCombinados.keys())
-    const pesosArray = Array.from(scoresCombinados.values())
+    // Arrays base - serão copiados a cada tentativa
+    const dezenasBase = Array.from(scoresCombinados.keys())
+    const pesosBase = Array.from(scoresCombinados.values())
 
     for (let tentativa = 0; tentativa < 500; tentativa++) {
-      const selecionadas = new Set<number>()
+      // Copiar arrays para esta tentativa (corrige o bug de mutação)
+      const dezenasDisponiveis = [...dezenasBase]
+      const pesosArray = [...pesosBase]
 
-      // Adicionar números fixos
-      for (const fixo of numerosFixos) {
-        selecionadas.add(fixo)
-      }
+      // Começar com os números fixos
+      const jogo: number[] = [...numerosFixos]
 
-      // Selecionar números restantes
-      while (selecionadas.size < TAMANHO_JOGO && dezenasDisponiveis.length > 0) {
+      // Selecionar números restantes até completar 6
+      while (jogo.length < TAMANHO_JOGO && dezenasDisponiveis.length > 0) {
         const idx = this.weightedChoice(pesosArray)
         const escolhida = dezenasDisponiveis[idx]
-        if (!selecionadas.has(escolhida)) {
-          selecionadas.add(escolhida)
-          // Remover da lista para não escolher novamente
-          dezenasDisponiveis.splice(idx, 1)
-          pesosArray.splice(idx, 1)
+
+        if (!jogo.includes(escolhida)) {
+          jogo.push(escolhida)
         }
+
+        // Remover da lista para não escolher novamente
+        dezenasDisponiveis.splice(idx, 1)
+        pesosArray.splice(idx, 1)
       }
 
-      if (selecionadas.size >= TAMANHO_JOGO) {
-        const jogo = Array.from(selecionadas).sort((a, b) => a - b)
-        if (!forcarBalanceamento || this.verificarBalanceamento(jogo)) {
-          return jogo
+      if (jogo.length === TAMANHO_JOGO) {
+        const jogoOrdenado = jogo.sort((a, b) => a - b)
+        if (!forcarBalanceamento || this.verificarBalanceamento(jogoOrdenado)) {
+          return jogoOrdenado
         }
       }
     }
@@ -309,63 +313,110 @@ export class GeradorJogos {
     const algoritmosUsados: string[] = []
     const jogosGerados = new Set<string>()
 
-    // Algoritmos de score
+    // Identificar tipos de algoritmos selecionados
     const algoritmosScore = algoritmos.filter(a =>
       ['frequencia', 'markov', 'coocorrencia', 'atraso'].includes(a)
     )
+    const usarUniforme = algoritmos.includes('uniforme')
 
-    // Fase 1: Gerar jogos puros para cada algoritmo
-    for (const alg of algoritmosScore) {
-      if (jogos.length >= quantidade) break
+    // Se nenhum algoritmo de score selecionado, usar uniforme
+    if (algoritmosScore.length === 0) {
+      while (jogos.length < quantidade) {
+        let jogo = this.gerarUniforme(numerosFixos, numerosRemovidos)
 
-      const pesos: Record<string, number> = {
-        frequencia: alg === 'frequencia' ? 1 : 0,
-        markov: alg === 'markov' ? 1 : 0,
-        coocorrencia: alg === 'coocorrencia' ? 1 : 0,
-        atraso: alg === 'atraso' ? 1 : 0,
+        // Se balanceamento ativo, tentar até 100 vezes encontrar um balanceado
+        if (forcarBalanceamento) {
+          for (let tentativa = 0; tentativa < 100; tentativa++) {
+            if (this.verificarBalanceamento(jogo)) break
+            jogo = this.gerarUniforme(numerosFixos, numerosRemovidos)
+          }
+        }
+
+        const jogoStr = jogo.join(',')
+        if (!jogosGerados.has(jogoStr)) {
+          jogosGerados.add(jogoStr)
+          jogos.push(jogo)
+          algoritmosUsados.push('Uniforme')
+        }
       }
-
-      const jogo = this.gerarPorScores(pesos, forcarBalanceamento, numerosFixos, numerosRemovidos)
-      const jogoStr = jogo.join(',')
-
-      if (!jogosGerados.has(jogoStr)) {
-        jogosGerados.add(jogoStr)
-        jogos.push(jogo)
-        algoritmosUsados.push(alg.charAt(0).toUpperCase() + alg.slice(1))
-      }
+      return { jogos, algoritmosUsados }
     }
 
-    // Fase 2: Gerar jogos mistos se ainda precisa
-    if (jogos.length < quantidade && algoritmosScore.length > 0) {
-      const pesoBase = 1.0 / algoritmosScore.length
-      const pesosMix: Record<string, number> = {
-        frequencia: algoritmosScore.includes('frequencia') ? pesoBase : 0,
-        markov: algoritmosScore.includes('markov') ? pesoBase : 0,
-        coocorrencia: algoritmosScore.includes('coocorrencia') ? pesoBase : 0,
-        atraso: algoritmosScore.includes('atraso') ? pesoBase : 0,
-      }
+    // Calcular quantos jogos por algoritmo
+    const jogosPorAlgoritmo = Math.ceil(quantidade / algoritmosScore.length)
 
-      for (let i = jogos.length; i < quantidade; i++) {
-        const jogo = this.gerarPorScores(pesosMix, forcarBalanceamento, numerosFixos, numerosRemovidos)
+    // Fase 1: Gerar jogos para cada algoritmo selecionado
+    for (const alg of algoritmosScore) {
+      const jogosParaEsteAlg = Math.min(
+        jogosPorAlgoritmo,
+        quantidade - jogos.length
+      )
+
+      for (let i = 0; i < jogosParaEsteAlg; i++) {
+        if (jogos.length >= quantidade) break
+
+        const pesos: Record<string, number> = {
+          frequencia: alg === 'frequencia' ? 1 : 0,
+          markov: alg === 'markov' ? 1 : 0,
+          coocorrencia: alg === 'coocorrencia' ? 1 : 0,
+          atraso: alg === 'atraso' ? 1 : 0,
+        }
+
+        const jogo = this.gerarPorScores(pesos, forcarBalanceamento, numerosFixos, numerosRemovidos)
         const jogoStr = jogo.join(',')
 
         if (!jogosGerados.has(jogoStr)) {
           jogosGerados.add(jogoStr)
           jogos.push(jogo)
-          algoritmosUsados.push('Misto')
+          algoritmosUsados.push(alg.charAt(0).toUpperCase() + alg.slice(1))
         }
       }
     }
 
-    // Fallback: completar com uniforme
+    // Fase 2: Se ainda faltam jogos, gerar mistos ou uniformes
     while (jogos.length < quantidade) {
-      const jogo = this.gerarUniforme(numerosFixos, numerosRemovidos)
-      const jogoStr = jogo.join(',')
+      let jogo: number[]
+      let label: string
 
+      if (usarUniforme && Math.random() > 0.5) {
+        // Gerar uniforme
+        jogo = this.gerarUniforme(numerosFixos, numerosRemovidos)
+        if (forcarBalanceamento) {
+          for (let tentativa = 0; tentativa < 100; tentativa++) {
+            if (this.verificarBalanceamento(jogo)) break
+            jogo = this.gerarUniforme(numerosFixos, numerosRemovidos)
+          }
+        }
+        label = 'Uniforme'
+      } else if (algoritmosScore.length > 1) {
+        // Gerar misto com todos os algoritmos selecionados
+        const pesoBase = 1.0 / algoritmosScore.length
+        const pesosMix: Record<string, number> = {
+          frequencia: algoritmosScore.includes('frequencia') ? pesoBase : 0,
+          markov: algoritmosScore.includes('markov') ? pesoBase : 0,
+          coocorrencia: algoritmosScore.includes('coocorrencia') ? pesoBase : 0,
+          atraso: algoritmosScore.includes('atraso') ? pesoBase : 0,
+        }
+        jogo = this.gerarPorScores(pesosMix, forcarBalanceamento, numerosFixos, numerosRemovidos)
+        label = 'Misto'
+      } else {
+        // Apenas um algoritmo selecionado, usar ele
+        const alg = algoritmosScore[0]
+        const pesos: Record<string, number> = {
+          frequencia: alg === 'frequencia' ? 1 : 0,
+          markov: alg === 'markov' ? 1 : 0,
+          coocorrencia: alg === 'coocorrencia' ? 1 : 0,
+          atraso: alg === 'atraso' ? 1 : 0,
+        }
+        jogo = this.gerarPorScores(pesos, forcarBalanceamento, numerosFixos, numerosRemovidos)
+        label = alg.charAt(0).toUpperCase() + alg.slice(1)
+      }
+
+      const jogoStr = jogo.join(',')
       if (!jogosGerados.has(jogoStr)) {
         jogosGerados.add(jogoStr)
         jogos.push(jogo)
-        algoritmosUsados.push('Uniforme')
+        algoritmosUsados.push(label)
       }
     }
 
