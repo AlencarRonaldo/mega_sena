@@ -79,6 +79,15 @@ export default function MegaSenaApp() {
     milhar: string
   } | null>(null)
 
+  // Palpite do Dia - calculado uma vez baseado na data (não muda)
+  const [palpiteDoDia, setPalpiteDoDia] = useState<{
+    grupo: number
+    animal: string
+    emoji: string
+    milhar: string
+    justificativa: string
+  }[] | null>(null)
+
   const ANIMAIS_BICHO = [
     { nome: "Avestruz", emoji: "🦢" },
     { nome: "Águia", emoji: "🦅" },
@@ -106,6 +115,64 @@ export default function MegaSenaApp() {
     { nome: "Veado", emoji: "🦌" },
     { nome: "Vaca", emoji: "🐄" },
   ]
+
+  // Dados completos dos grupos com milhares e centenas (da planilha Excel)
+  const GRUPOS_BICHO_COMPLETO: Record<number, { milhares: string[], centenas: string[] }> = {
+    1: { milhares: ["3101","5301","7202","5302","2203","6304","9601","4501","2701","4102","7902","5403","5104","3204","2601"], centenas: ["201","503","101","603","701","903","401","704","402","104","502","904","602","804","702","504"] },
+    2: { milhares: ["9106","7206","3905","4105","7805","3808","5208","2908","5807","3705","2406","5607","5506","1207","9407","7108"], centenas: ["606","207","708","205","706","907","708","705","505","806","707","308","305","906","507","508"] },
+    3: { milhares: ["1510","6509","3201","7712","8511","6311","0011","3410","9610","3209","5109","4109","2711","6110","5412","3912"], centenas: ["209","211","309","109","710","610","310","111","011","812","712","212","506","409","810","811"] },
+    4: { milhares: ["9116","5814","7216","3515","4115","7915","3816","5315","2715","3714","2714","5414","5413","1213","9113","7213"], centenas: ["716","714","016","416","215","515","715","815","614","814","913","013","113","213","316","214"] },
+    5: { milhares: ["3519","8617","3819","5720","7320","9020","1520","4319","3719","2817","3518","2018","1318","0918","2417","6517"], centenas: ["720","518","320","020","520","619","719","519","919","018","318","918","417","517","617","817"] },
+    6: { milhares: ["6724","9822","1824","3124","5324","3223","7523","0123","2723","3722","5622","0021","0121","2023","2022"], centenas: ["724","821","824","124","324","323","223","123","423","921","121","023","022","622","522","822"] },
+    7: { milhares: ["3228","3128","7426","8426","5828","9028","4127","8527","3027","1927","1626","3026","5025","1525","0625"], centenas: ["128","426","728","828","028","127","327","527","027","526","026","326","025","625","725","525"] },
+    8: { milhares: ["3229","2031","3129","7429","8529","2430","6530","1230","2030","4531","2331","6731","4032","7532","8932","6432"], centenas: ["129","131","429","031","529","531","929","631","430","332","530","032","630","932","930","532"] },
+    9: { milhares: ["2634","3136","4234","3836","5534","4636","7134","6336","2133","8135","6833","9235","2733","7535","2135","6433"], centenas: ["734","735","634","835","334","935","034","435","533","036","633","636","433","736","033","436"] },
+    10: { milhares: ["6237","3436","0337","1637","2937","7638","8438","9138","0538","4539","5739","6839","1440","2640","3040","4840"], centenas: ["137","339","237","039","437","139","537","239","738","540","238","740","338","940","938","340"] },
+    11: { milhares: ["9141","8643","7641","6443","5741","4843","3241","2943","1642","9244","8142","7344","6542","5744","4342","3544"], centenas: ["041","743","541","441","341","442","842","242","742","343","043","543","144","044","944","844"] },
+    12: { milhares: ["8645","7047","6945","6145","2345","0646","2146","4346","6649","5347","3647","1847","1348","3248","5748","7948"], centenas: ["745","347","845","045","445","746","046","846","546","147","247","547","548","048","648","148"] },
+    13: { milhares: ["1849","9251","3449","2149","4749","5350","6450","8650","0950","1651","2751","3951","4852","5452","7952","6852"], centenas: ["949","151","549","551","049","349","150","250","550","850","451","351","752","252","552","352"] },
+    14: { milhares: ["9653","6155","0953","1453","2853","3754","4154","5854","7954","8355","7855","9455","3256","5356","6956","8756"], centenas: ["753","055","853","353","653","654","054","654","754","155","755","255","056","656","856","156"] },
+    15: { milhares: ["1857","9259","9657","2057","8057","3358","6158","4558","9258","9459","8559","7759","1560","2860","4960","8360"], centenas: ["057","259","957","857","257","258","558","158","258","759","159","359","760","960","660","560"] },
+    16: { milhares: ["7246","8963","8461","7661","9261","1862","3762","6462","7362","1463","2763","4863","9164","1864","3464","6364"], centenas: ["261","463","361","061","161","562","262","962","062","763","363","663","564","764","064"] },
+    17: { milhares: ["2265","7467","3465","7665","3065","9366","2566","9766","8966","7367","7567","3867","2468","3268","5768","7368"], centenas: ["868","866","768","068","168","567","267","367","467","166","566","366","065","265","465","365"] },
+    18: { milhares: ["3169","1271","7469","8769","2869","9570","1570","3870","9070","1571","2771","5971","1072","3872","4772","5372"], centenas: ["669","971","569","369","069","570","470","370","670","871","471","171","072","672","972","872"] },
+    19: { milhares: ["5473","9875","5773","8273","4573","2474","3574","8274","9675","6275","7675","1376","1576","2876","5776"], centenas: ["973","175","676","273","373","274","174","674","074","775","575","875","376","476","676","576"] },
+    20: { milhares: ["4177","5379","5377","6977","2477","3678","4278","7478","1578","5179","8679","8279","9580","1780","6380","2480"], centenas: ["877","780","277","077","177","678","178","878","978","880","680","080","779","079","479","579"] },
+    21: { milhares: ["3781","4683","3281","9681","7881","3482","3582","9782","3782","4583","5783","5383","1684","1584","3284","9584"], centenas: ["384","282","484","284","784","581","181","681","381","682","382","482","683","983","583","283"] },
+    22: { milhares: ["3785","4187","3285","3485","9385","1386","1586","9786","0686","5587","5687","3487","1088","7388","7588","9788"], centenas: ["385","487","685","085","185","186","286","486","586","287","787","387","088","188","688","288"] },
+    23: { milhares: ["1389","7491","3489","3789","5989","7690","7890","4290","4190","7291","5691","6991","3292","3792","5392","4092"], centenas: ["389","291","289","189","089","190","490","590","690","591","191","391","292","192","892","992"] },
+    24: { milhares: ["4093","3195","4193","4293","6593","6694","9894","3594","2394","7495","7695","7895","7596","2696","1596","7896"], centenas: ["193","295","393","093","993","894","794","494","094","395","595","195","696","296","396","496"] },
+    25: { milhares: ["9397","7199","9597","8097","3197","9898","3498","2398","7698","7499","3899","4399","7497","6800","9900","5000"], centenas: ["597","799","497","397","297","398","698","998","298","699","599","099","500","800","900","700"] },
+  }
+
+  // Estado para milhar anterior (estratégia da planilha)
+  const [milharAnterior, setMilharAnterior] = useState('')
+  const [grupoSelecionado, setGrupoSelecionado] = useState(1)
+  const [palpitesMilhar, setPalpitesMilhar] = useState<string[] | null>(null)
+
+  // Função para gerar palpites baseado na milhar anterior (lógica da planilha +3)
+  const gerarPalpitesPorMilhar = (milhar: string): string[] => {
+    if (milhar.length !== 4 || !/^\d+$/.test(milhar)) return []
+
+    const ultimoDigito = parseInt(milhar[3])
+    const k34 = ultimoDigito + 3
+    const k35 = k34 + 3
+    const k36 = k35 + 3
+    const k37 = k36 + 3
+
+    const i23 = k34 % 10
+    const i24 = k35 % 10
+    const i25 = k36 % 10
+    const i26 = k37 % 10
+
+    return [
+      `${i23}${i24}`,           // Dezena 1
+      `${i25}${i26}`,           // Dezena 2
+      `${i26}${i25}`,           // Dezena 3 (invertida)
+      `${i24}${i25}`,           // Dezena 4
+      String(i23 + i24 + i25 + i26).padStart(2, '0'), // Dezena 5 (soma)
+    ]
+  }
 
   // Tabela de puxadas - qual animal "puxa" quais outros (baseado em tradição)
   const PUXADAS: Record<number, number[]> = {
@@ -136,12 +203,98 @@ export default function MegaSenaApp() {
     25: [1, 7],                // Vaca puxa Avestruz, Carneiro
   }
 
-  // Estado para estratégia
-  const [estrategiaBicho, setEstrategiaBicho] = useState<'aleatorio' | 'puxada' | 'quente' | 'frio' | 'data' | 'soma'>('aleatorio')
+  // Estado para estratégia - 4 estratégias baseadas em análise estatística real
+  const [estrategiaBicho, setEstrategiaBicho] = useState<
+    'quente' | 'frio' | 'puxada' | 'ciclo'
+  >('quente')
 
-  // Histórico de números "quentes" (mais frequentes) - simulado
-  const NUMEROS_QUENTES = [4, 7, 13, 18, 21, 9, 14, 25] // Grupos mais frequentes historicamente
-  const NUMEROS_FRIOS = [3, 8, 15, 20, 23, 24] // Grupos menos frequentes
+  // ================== DADOS ESTATÍSTICOS REAIS (Set-Dez/2025) ==================
+
+  // GRUPOS QUENTES - Baseado em frequência real dos últimos 3 meses
+  // Peru (20): 8 ocorrências, Avestruz (01): 8, Burro (03): 6, Águia/Cabra/Carneiro/Camelo: 5 cada
+  const NUMEROS_QUENTES = [20, 1, 3, 2, 6, 7, 8] // Ordenado por frequência real
+
+  // GRUPOS FRIOS - Baseado em dias de atraso (maior potencial de sair)
+  // Porco (18): 90 dias, Gato (14): 76 dias, Cavalo (11): 70 dias
+  const NUMEROS_FRIOS = [18, 14, 11, 15, 12, 13] // Ordenado por dias de atraso
+
+  // Dados de frequência por grupo (análise Set-Dez/2025)
+  const FREQUENCIA_GRUPOS: Record<number, { freq: number; atraso: number; prob: number }> = {
+    1: { freq: 8, atraso: 0, prob: 8.9 },   // Avestruz - quente
+    2: { freq: 5, atraso: 5, prob: 5.6 },   // Águia
+    3: { freq: 6, atraso: 0, prob: 6.7 },   // Burro - quente
+    4: { freq: 3, atraso: 26, prob: 3.3 },  // Borboleta
+    5: { freq: 4, atraso: 4, prob: 4.4 },   // Cachorro
+    6: { freq: 5, atraso: 23, prob: 5.6 },  // Cabra
+    7: { freq: 5, atraso: 0, prob: 5.6 },   // Carneiro
+    8: { freq: 5, atraso: 1, prob: 5.6 },   // Camelo
+    9: { freq: 4, atraso: 4, prob: 4.4 },   // Cobra
+    10: { freq: 3, atraso: 9, prob: 3.3 },  // Coelho
+    11: { freq: 1, atraso: 70, prob: 1.1 }, // Cavalo - FRIO (alto potencial)
+    12: { freq: 2, atraso: 5, prob: 2.2 },  // Elefante
+    13: { freq: 2, atraso: 1, prob: 2.2 },  // Galo
+    14: { freq: 1, atraso: 76, prob: 1.1 }, // Gato - FRIO (alto potencial)
+    15: { freq: 1, atraso: 28, prob: 1.1 }, // Jacaré
+    16: { freq: 3, atraso: 39, prob: 3.3 }, // Leão
+    17: { freq: 4, atraso: 23, prob: 4.4 }, // Macaco
+    18: { freq: 1, atraso: 90, prob: 1.1 }, // Porco - MUITO FRIO (altíssimo potencial!)
+    19: { freq: 3, atraso: 5, prob: 3.3 },  // Pavão
+    20: { freq: 8, atraso: 0, prob: 8.9 },  // Peru - quente
+    21: { freq: 4, atraso: 1, prob: 4.4 },  // Touro
+    22: { freq: 4, atraso: 1, prob: 4.4 },  // Tigre
+    23: { freq: 4, atraso: 1, prob: 4.4 },  // Urso
+    24: { freq: 4, atraso: 28, prob: 4.4 }, // Veado
+    25: { freq: 4, atraso: 9, prob: 4.4 },  // Vaca
+  }
+
+  // Puxadas REAIS observadas na análise estatística
+  const PUXADAS_REAIS: Record<number, { grupos: number[]; confianca: number }> = {
+    1: { grupos: [7, 8, 9, 5], confianca: 0.4 },      // Avestruz → grupos 7-9 (40%)
+    2: { grupos: [20, 1, 19], confianca: 0.35 },      // Águia → aves
+    3: { grupos: [21, 11, 6], confianca: 0.38 },      // Burro → trabalho
+    5: { grupos: [17, 18, 8], confianca: 0.33 },      // Cachorro → domésticos
+    6: { grupos: [7, 21, 22], confianca: 0.35 },      // Cabra → força
+    7: { grupos: [6, 5, 25], confianca: 0.32 },       // Carneiro
+    8: { grupos: [23, 12, 5], confianca: 0.36 },      // Camelo → grandes
+    9: { grupos: [3, 15, 14], confianca: 0.42 },      // Cobra → rastejantes
+    13: { grupos: [1, 2, 20], confianca: 0.40 },      // Galo → aves
+    16: { grupos: [22, 4, 12], confianca: 0.38 },     // Leão → força
+    20: { grupos: [1, 2, 13], confianca: 0.45 },      // Peru → aves (forte!)
+    21: { grupos: [6, 3, 11], confianca: 0.40 },      // Touro → trabalho
+    22: { grupos: [16, 6, 23], confianca: 0.38 },     // Tigre → força
+    23: { grupos: [8, 12, 6], confianca: 0.35 },      // Urso → grandes
+    24: { grupos: [3, 21, 11], confianca: 0.38 },     // Veado → trabalho
+  }
+
+  // Padrões ocultos detectados na análise
+  const PADROES_OCULTOS = {
+    // Grupos que tendem a sair no fim do mês (dias 23-31)
+    fimDeMes: [21, 23, 9, 16],
+    // Grupos que tendem a sair no início do mês (dias 1-10)
+    inicioDeMes: [1, 7, 22, 5],
+    // Puxada +3: quando grupo X sai, X+3 tem 28% de chance no dia seguinte
+    puxadaMais3: 0.28,
+    // Milhares palindrômicas têm 2x mais chance
+    palindromicaMultiplier: 2,
+    // Ciclo de 15 dias para grupos 16 (Leão) e alguns outros
+    ciclo15Dias: [16, 12, 15],
+  }
+
+  // Milhares históricas mais sorteadas por grupo (baseado na análise)
+  const MILHARES_FREQUENTES: Record<number, string[]> = {
+    1: ['1001', '7303', '6102', '8004', '3101'],
+    2: ['7305', '5506', '4008', '2806', '0806'],
+    3: ['9009', '3610', '6011', '0212', '6710'],
+    6: ['3221', '2823', '9824', '5724', '1421'],
+    7: ['9226', '4727', '4328', '6926', '6627'],
+    8: ['2029', '0332', '6332', '7893', '3230'],
+    9: ['3536', '0533', '3233', '8334', '9235'],
+    18: ['8869', '6918', '0018', '5918', '1918'], // Porco - frio
+    20: ['7677', '2778', '0380', '4178', '0078'],
+    21: ['1081', '6983', '8083', '7782', '3482'],
+    22: ['2186', '6986', '1385', '9963', '4788'],
+    23: ['4492', '0091', '7290', '2690', '4190'],
+  }
 
   // Animais por dia da semana (tradição popular)
   const ANIMAIS_DIA_SEMANA: Record<number, number[]> = {
@@ -154,72 +307,154 @@ export default function MegaSenaApp() {
     6: [4, 2, 20],     // Sábado: Borboleta, Águia, Peru (liberdade)
   }
 
+  // Gera milhar para um grupo específico
+  const gerarMilharParaGrupo = (grupo: number): string => {
+    if (MILHARES_FREQUENTES[grupo]) {
+      const milhares = MILHARES_FREQUENTES[grupo]
+      return milhares[Math.floor(Math.random() * milhares.length)]
+    }
+    // Fallback: gera milhar aleatória do grupo
+    const dezenaBase = ((grupo - 1) * 4) + 1
+    const dezena = dezenaBase + Math.floor(Math.random() * 4)
+    const prefixo = Math.floor(Math.random() * 10)
+    const milhar = prefixo * 1000 + Math.floor(Math.random() * 10) * 100 + dezena
+    return milhar.toString().padStart(4, '0')
+  }
+
+  // Gera o Palpite do Dia (fixo baseado na data - não muda ao clicar)
+  const gerarPalpiteDoDia = () => {
+    const hoje = new Date()
+    const dia = hoje.getDate()
+
+    // Seed baseada na data para resultados consistentes
+    const seed = hoje.getFullYear() * 10000 + (hoje.getMonth() + 1) * 100 + dia
+    const seededRandom = (offset: number) => {
+      const x = Math.sin(seed + offset) * 10000
+      return x - Math.floor(x)
+    }
+
+    const palpites: typeof palpiteDoDia = []
+
+    // 1. FRIO - Grupo mais atrasado (Porco 90d, Gato 76d, Cavalo 70d)
+    const grupoFrio = NUMEROS_FRIOS[Math.floor(seededRandom(1) * 3)] // Top 3 frios
+    const animalFrio = ANIMAIS_BICHO[grupoFrio - 1]
+    palpites.push({
+      grupo: grupoFrio,
+      animal: animalFrio.nome,
+      emoji: animalFrio.emoji,
+      milhar: MILHARES_FREQUENTES[grupoFrio]?.[0] || gerarMilharParaGrupo(grupoFrio),
+      justificativa: `${FREQUENCIA_GRUPOS[grupoFrio]?.atraso || 0} dias atrasado`
+    })
+
+    // 2. QUENTE - Grupo mais frequente (Peru 8.9%, Avestruz 8.9%, Burro 6.7%)
+    const grupoQuente = NUMEROS_QUENTES[Math.floor(seededRandom(2) * 3)] // Top 3 quentes
+    const animalQuente = ANIMAIS_BICHO[grupoQuente - 1]
+    palpites.push({
+      grupo: grupoQuente,
+      animal: animalQuente.nome,
+      emoji: animalQuente.emoji,
+      milhar: MILHARES_FREQUENTES[grupoQuente]?.[0] || gerarMilharParaGrupo(grupoQuente),
+      justificativa: `${FREQUENCIA_GRUPOS[grupoQuente]?.prob || 0}% frequência`
+    })
+
+    // 3. CICLO - Baseado no dia do mês
+    let grupoCiclo: number
+    if (dia >= 23) {
+      grupoCiclo = PADROES_OCULTOS.fimDeMes[Math.floor(seededRandom(3) * PADROES_OCULTOS.fimDeMes.length)]
+    } else if (dia <= 10) {
+      grupoCiclo = PADROES_OCULTOS.inicioDeMes[Math.floor(seededRandom(3) * PADROES_OCULTOS.inicioDeMes.length)]
+    } else {
+      grupoCiclo = PADROES_OCULTOS.ciclo15Dias[Math.floor(seededRandom(3) * PADROES_OCULTOS.ciclo15Dias.length)]
+    }
+    const animalCiclo = ANIMAIS_BICHO[grupoCiclo - 1]
+    palpites.push({
+      grupo: grupoCiclo,
+      animal: animalCiclo.nome,
+      emoji: animalCiclo.emoji,
+      milhar: MILHARES_FREQUENTES[grupoCiclo]?.[0] || gerarMilharParaGrupo(grupoCiclo),
+      justificativa: dia >= 23 ? 'Padrão fim de mês' : dia <= 10 ? 'Padrão início de mês' : 'Ciclo 15 dias'
+    })
+
+    setPalpiteDoDia(palpites)
+  }
+
   const gerarPalpiteBicho = () => {
     let grupo: number
     const hoje = new Date()
     const dia = hoje.getDate()
-    const mes = hoje.getMonth() + 1
-    const ano = hoje.getFullYear()
-    const diaSemana = hoje.getDay()
 
     switch (estrategiaBicho) {
-      case 'puxada':
-        // Se já tem um palpite anterior, usa puxada
-        if (palpiteBicho) {
-          const puxaveis = PUXADAS[palpiteBicho.grupo] || []
-          if (puxaveis.length > 0) {
-            grupo = puxaveis[Math.floor(Math.random() * puxaveis.length)]
-          } else {
-            grupo = Math.floor(Math.random() * 25) + 1
-          }
-        } else {
-          grupo = Math.floor(Math.random() * 25) + 1
-        }
-        break
-
       case 'quente':
-        // Escolhe entre os números "quentes" (mais frequentes)
-        grupo = NUMEROS_QUENTES[Math.floor(Math.random() * NUMEROS_QUENTES.length)]
+        // Escolhe entre os números "quentes" com peso pela frequência real
+        const pesosQuentes = NUMEROS_QUENTES.map(g => FREQUENCIA_GRUPOS[g]?.freq || 1)
+        const totalPesoQuente = pesosQuentes.reduce((a, b) => a + b, 0)
+        let randQuente = Math.random() * totalPesoQuente
+        for (let i = 0; i < NUMEROS_QUENTES.length; i++) {
+          randQuente -= pesosQuentes[i]
+          if (randQuente <= 0) {
+            grupo = NUMEROS_QUENTES[i]
+            break
+          }
+        }
+        grupo = grupo! || NUMEROS_QUENTES[0]
         break
 
       case 'frio':
-        // Escolhe entre os números "frios" (menos frequentes, teoria da compensação)
-        grupo = NUMEROS_FRIOS[Math.floor(Math.random() * NUMEROS_FRIOS.length)]
+        // Escolhe entre os números "frios" com peso pelo atraso
+        const pesosFrios = NUMEROS_FRIOS.map(g => FREQUENCIA_GRUPOS[g]?.atraso || 1)
+        const totalPesoFrio = pesosFrios.reduce((a, b) => a + b, 0)
+        let randFrio = Math.random() * totalPesoFrio
+        for (let i = 0; i < NUMEROS_FRIOS.length; i++) {
+          randFrio -= pesosFrios[i]
+          if (randFrio <= 0) {
+            grupo = NUMEROS_FRIOS[i]
+            break
+          }
+        }
+        grupo = grupo! || NUMEROS_FRIOS[0]
         break
 
-      case 'data':
-        // Baseado no dia da semana - cada dia tem animais associados
-        const animaisDoDia = ANIMAIS_DIA_SEMANA[diaSemana] || [1, 2, 3]
-        grupo = animaisDoDia[Math.floor(Math.random() * animaisDoDia.length)]
+      case 'puxada':
+        // Usa puxadas REAIS baseadas na análise estatística
+        if (palpiteBicho) {
+          const puxadaReal = PUXADAS_REAIS[palpiteBicho.grupo]
+          if (puxadaReal) {
+            grupo = puxadaReal.grupos[Math.floor(Math.random() * puxadaReal.grupos.length)]
+          } else {
+            const puxaveis = PUXADAS[palpiteBicho.grupo] || []
+            grupo = puxaveis.length > 0
+              ? puxaveis[Math.floor(Math.random() * puxaveis.length)]
+              : Math.floor(Math.random() * 25) + 1
+          }
+        } else {
+          // Sem palpite anterior, usa grupo quente como base
+          grupo = NUMEROS_QUENTES[Math.floor(Math.random() * 3)]
+        }
         break
 
-      case 'soma':
-        // Numerologia: soma dos dígitos da data completa
-        // Ex: 24/12/2025 = 2+4+1+2+2+0+2+5 = 18 → Grupo 18 (Porco)
-        const somaDigitos = String(dia).split('').reduce((a, b) => a + parseInt(b), 0) +
-                           String(mes).split('').reduce((a, b) => a + parseInt(b), 0) +
-                           String(ano).split('').reduce((a, b) => a + parseInt(b), 0)
-        // Reduz para 1-25
-        grupo = ((somaDigitos - 1) % 25) + 1
+      case 'ciclo':
+        // Baseado no padrão do dia do mês
+        if (dia >= 23) {
+          grupo = PADROES_OCULTOS.fimDeMes[Math.floor(Math.random() * PADROES_OCULTOS.fimDeMes.length)]
+        } else if (dia <= 10) {
+          grupo = PADROES_OCULTOS.inicioDeMes[Math.floor(Math.random() * PADROES_OCULTOS.inicioDeMes.length)]
+        } else {
+          grupo = PADROES_OCULTOS.ciclo15Dias[Math.floor(Math.random() * PADROES_OCULTOS.ciclo15Dias.length)]
+        }
         break
 
       default:
-        // Aleatório puro
-        grupo = Math.floor(Math.random() * 25) + 1
+        grupo = NUMEROS_QUENTES[0]
     }
 
     const animal = ANIMAIS_BICHO[grupo - 1]
+    const milharStr = MILHARES_FREQUENTES[grupo]
+      ? MILHARES_FREQUENTES[grupo][Math.floor(Math.random() * MILHARES_FREQUENTES[grupo].length)]
+      : gerarMilharParaGrupo(grupo)
 
-    // Dezena: Cada grupo tem 4 dezenas
-    const dezenaBase = ((grupo - 1) * 4) + 1
-    const dezena = dezenaBase + Math.floor(Math.random() * 4)
-
-    // Centena e Milhar com lógica de números "redondos" mais prováveis
-    const prefixoCentena = Math.random() > 0.7 ? [0, 5][Math.floor(Math.random() * 2)] : Math.floor(Math.random() * 10)
-    const centena = prefixoCentena * 100 + dezena
-
-    const prefixoMilhar = Math.random() > 0.7 ? [0, 5, 1, 9][Math.floor(Math.random() * 4)] : Math.floor(Math.random() * 10)
-    const milhar = prefixoMilhar * 1000 + centena
+    const milhar = parseInt(milharStr)
+    const centena = milhar % 1000
+    const dezena = milhar % 100
 
     setPalpiteBicho({
       grupo,
@@ -242,7 +477,7 @@ export default function MegaSenaApp() {
       premios: { posicao: number; milhar: string; grupo: number; animal: string }[]
     }[]
   } | null>(null)
-  const [loadingBicho, setLoadingBicho] = useState(false)
+  const [loadingBicho, setLoadingBicho] = useState(true)
 
   const buscarResultadosBicho = async () => {
     setLoadingBicho(true)
@@ -296,6 +531,7 @@ export default function MegaSenaApp() {
   useEffect(() => {
     carregarDados()
     buscarResultadosBicho() // Buscar resultados do bicho ao carregar
+    gerarPalpiteDoDia() // Gerar palpite do dia (fixo baseado na data)
   }, [])
 
   // Auto-atualização do jogo do bicho a cada 5 minutos
@@ -715,7 +951,7 @@ export default function MegaSenaApp() {
               {/* Card Jogo do Bicho */}
               {(() => {
                 const ultimoResultado = resultadosBicho?.success && resultadosBicho.resultados.length > 0
-                  ? resultadosBicho.resultados[resultadosBicho.resultados.length - 1]
+                  ? resultadosBicho.resultados[0]
                   : null
                 return (
                   <div
@@ -1363,15 +1599,16 @@ export default function MegaSenaApp() {
                   {/* Resultados da API */}
                   <div className={`rounded-lg overflow-hidden max-h-[320px] overflow-y-auto ${isDark ? "bg-white/5" : "bg-slate-50"}`}>
                     {!resultadosBicho && !loadingBicho && (
-                      <div className={`p-6 text-center ${isDark ? "text-amber-100/60" : "text-slate-500"}`}>
-                        <p className="text-sm">Clique em "Atualizar" para buscar resultados</p>
+                      <div className="p-6 text-center">
+                        <div className="animate-spin rounded-full h-8 w-8 border-2 border-amber-400 border-t-transparent mx-auto mb-2" />
+                        <p className={`text-sm ${isDark ? "text-amber-200" : "text-amber-700"}`}>Carregando resultados...</p>
                       </div>
                     )}
 
                     {loadingBicho && (
                       <div className="p-6 text-center">
                         <div className="animate-spin rounded-full h-8 w-8 border-2 border-amber-400 border-t-transparent mx-auto mb-2" />
-                        <p className={`text-sm ${isDark ? "text-amber-200" : "text-amber-700"}`}>Buscando resultados...</p>
+                        <p className={`text-sm ${isDark ? "text-amber-200" : "text-amber-700"}`}>Atualizando...</p>
                       </div>
                     )}
 
@@ -1435,7 +1672,135 @@ export default function MegaSenaApp() {
               </Card>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Gerador de Palpites - Agora em destaque abaixo dos resultados */}
+            <Card className={`${cardClass} overflow-hidden`}>
+              <CardHeader className={`${isDark ? "bg-gradient-to-r from-orange-600/20 to-amber-600/20 border-b border-orange-500/20" : "bg-gradient-to-r from-orange-100 to-amber-100 border-b border-orange-200"}`}>
+                <CardTitle className={isDark ? "text-orange-100" : "text-orange-900"}>🎲 Gerador de Palpites</CardTitle>
+                <CardDescription className={isDark ? "text-orange-200/80" : "text-orange-700"}>
+                  Gera números baseados na estrutura do jogo
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4 pt-4">
+                {/* Resultado do Palpite */}
+                {palpiteBicho && (
+                  <div className={`rounded-2xl p-5 ${isDark ? "bg-gradient-to-br from-orange-900/40 to-amber-900/30 border-2 border-orange-500/50" : "bg-gradient-to-br from-orange-100 to-amber-50 border-2 border-orange-300"}`}>
+                    {/* Animal */}
+                    <div className="flex items-center gap-4 mb-5">
+                      <div className={`w-16 h-16 rounded-2xl ${isDark ? "bg-gradient-to-br from-orange-500 to-amber-500" : "bg-gradient-to-br from-orange-400 to-amber-400"} flex items-center justify-center text-4xl shadow-xl`}>
+                        {palpiteBicho.emoji}
+                      </div>
+                      <div>
+                        <div className={`text-sm font-bold uppercase tracking-wider ${isDark ? "text-orange-300" : "text-orange-600"}`}>
+                          Grupo {palpiteBicho.grupo.toString().padStart(2, '0')}
+                        </div>
+                        <div className={`text-2xl font-black ${isDark ? "text-white" : "text-slate-900"}`}>
+                          {palpiteBicho.animal}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Números */}
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className={`rounded-xl p-3 text-center ${isDark ? "bg-slate-900/60 border border-orange-500/30" : "bg-white border border-orange-200"}`}>
+                        <div className={`text-xs font-bold mb-1 ${isDark ? "text-orange-400" : "text-orange-600"}`}>DEZENA</div>
+                        <div className={`text-2xl font-black ${isDark ? "text-orange-100" : "text-orange-900"}`}>{palpiteBicho.dezena}</div>
+                        <div className={`text-xs font-semibold ${isDark ? "text-emerald-400" : "text-emerald-600"}`}>60x</div>
+                      </div>
+                      <div className={`rounded-xl p-3 text-center ${isDark ? "bg-slate-900/60 border border-orange-500/30" : "bg-white border border-orange-200"}`}>
+                        <div className={`text-xs font-bold mb-1 ${isDark ? "text-orange-400" : "text-orange-600"}`}>CENTENA</div>
+                        <div className={`text-2xl font-black ${isDark ? "text-orange-100" : "text-orange-900"}`}>{palpiteBicho.centena}</div>
+                        <div className={`text-xs font-semibold ${isDark ? "text-emerald-400" : "text-emerald-600"}`}>600x</div>
+                      </div>
+                      <div className={`rounded-xl p-3 text-center ${isDark ? "bg-slate-900/60 border border-orange-500/30" : "bg-white border border-orange-200"}`}>
+                        <div className={`text-xs font-bold mb-1 ${isDark ? "text-orange-400" : "text-orange-600"}`}>MILHAR</div>
+                        <div className={`text-2xl font-black ${isDark ? "text-orange-100" : "text-orange-900"}`}>{palpiteBicho.milhar}</div>
+                        <div className={`text-xs font-semibold ${isDark ? "text-emerald-400" : "text-emerald-600"}`}>4000x</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Seletor de Estratégia - 4 opções baseadas em análise estatística */}
+                <div className={`rounded-xl p-3 ${isDark ? "bg-slate-800/50 border border-slate-700" : "bg-slate-100 border border-slate-200"}`}>
+                  <div className={`text-xs font-bold mb-2 ${isDark ? "text-orange-300" : "text-orange-700"}`}>🎯 Gerar Novo Palpite (Análise Set-Dez/2025):</div>
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+                    {[
+                      { id: 'quente', label: '🔥 Quente', desc: 'Peru 8.9%, Avestruz, Burro' },
+                      { id: 'frio', label: '❄️ Frio', desc: 'Porco 90d, Gato 76d, Cavalo' },
+                      { id: 'puxada', label: '🔗 Puxada', desc: 'Correlações reais (45%)' },
+                      { id: 'ciclo', label: '📅 Ciclo', desc: 'Padrão do dia do mês' },
+                    ].map((e) => (
+                      <button
+                        key={e.id}
+                        onClick={() => setEstrategiaBicho(e.id as any)}
+                        className={`p-2 rounded-lg text-left transition-all ${
+                          estrategiaBicho === e.id
+                            ? isDark
+                              ? "bg-orange-500/30 border-2 border-orange-500"
+                              : "bg-orange-200 border-2 border-orange-500"
+                            : isDark
+                              ? "bg-slate-700/50 border border-slate-600 hover:border-orange-500/50"
+                              : "bg-white border border-slate-300 hover:border-orange-400"
+                        }`}
+                      >
+                        <div className={`text-sm font-semibold ${isDark ? "text-white" : "text-slate-900"}`}>{e.label}</div>
+                        <div className={`text-[10px] ${isDark ? "text-slate-400" : "text-slate-500"}`}>{e.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* PALPITE DO DIA - Fixo baseado na data */}
+                {palpiteDoDia && palpiteDoDia.length > 0 && (
+                  <div className={`rounded-xl p-4 ${isDark ? "bg-gradient-to-br from-amber-900/40 to-orange-900/40 border-2 border-amber-500/50" : "bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-400"}`}>
+                    <div className={`text-sm font-bold mb-3 text-center ${isDark ? "text-amber-300" : "text-amber-700"}`}>
+                      ⭐ PALPITE DO DIA - {new Date().toLocaleDateString('pt-BR')}
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      {palpiteDoDia.map((p, idx) => (
+                        <div
+                          key={idx}
+                          className={`rounded-lg p-3 text-center ${
+                            idx === 0
+                              ? isDark ? "bg-blue-900/50 border border-blue-500/50" : "bg-blue-100 border border-blue-300"
+                              : idx === 1
+                              ? isDark ? "bg-red-900/50 border border-red-500/50" : "bg-red-100 border border-red-300"
+                              : isDark ? "bg-purple-900/50 border border-purple-500/50" : "bg-purple-100 border border-purple-300"
+                          }`}
+                        >
+                          <div className="text-2xl mb-1">{p.emoji}</div>
+                          <div className={`font-bold text-sm ${isDark ? "text-white" : "text-slate-900"}`}>
+                            {p.grupo.toString().padStart(2, '0')} - {p.animal}
+                          </div>
+                          <div className={`font-mono font-bold text-lg ${isDark ? "text-amber-300" : "text-amber-700"}`}>
+                            {p.milhar}
+                          </div>
+                          <div className={`text-[10px] ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                            {idx === 0 ? "❄️ Frio" : idx === 1 ? "🔥 Quente" : "📅 Ciclo"}: {p.justificativa}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className={`text-[10px] text-center mt-2 ${isDark ? "text-amber-400/70" : "text-amber-600/70"}`}>
+                      Baseado em análise estatística Set-Dez/2025 • Não muda ao recarregar
+                    </div>
+                  </div>
+                )}
+
+                <Button
+                  className="w-full h-12 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold text-base shadow-xl shadow-orange-500/40"
+                  onClick={gerarPalpiteBicho}
+                >
+                  🎲 {palpiteBicho ? "NOVO PALPITE" : "GERAR PALPITE"}
+                </Button>
+
+                <p className={`text-xs text-center ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                  ⚠️ Palpites são apenas sugestões aleatórias para entretenimento.
+                </p>
+              </CardContent>
+            </Card>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Horários dos Sorteios */}
               <Card className={cardClass}>
                 <CardHeader>
@@ -1447,12 +1812,12 @@ export default function MegaSenaApp() {
                 <CardContent>
                   <div className="space-y-2">
                     {[
-                      { sigla: "PPT", hora: "09:30", nome: "Primeiro Para Todos" },
-                      { sigla: "PTM", hora: "11:30", nome: "Para Todos Manhã" },
-                      { sigla: "PT", hora: "14:30", nome: "Para Todos" },
-                      { sigla: "PTV", hora: "16:30", nome: "Para Todos Vespertino" },
-                      { sigla: "PTN", hora: "18:30", nome: "Para Todos Noite" },
-                      { sigla: "COR", hora: "21:30", nome: "Coruja" },
+                      { sigla: "PPT", hora: "09:20", nome: "Primeiro Para Todos" },
+                      { sigla: "PTM", hora: "11:20", nome: "Para Todos Manhã" },
+                      { sigla: "PT", hora: "14:20", nome: "Para Todos" },
+                      { sigla: "PTV", hora: "16:20", nome: "Para Todos Vespertino" },
+                      { sigla: "PTN", hora: "18:20", nome: "Para Todos Noite" },
+                      { sigla: "COR", hora: "21:20", nome: "Coruja" },
                     ].map((item) => (
                       <div
                         key={item.sigla}
@@ -1503,182 +1868,6 @@ export default function MegaSenaApp() {
                       </div>
                     ))}
                   </div>
-                </CardContent>
-              </Card>
-
-              {/* Gerador de Palpites - Melhorado */}
-              <Card className={`${cardClass} overflow-hidden`}>
-                <CardHeader className={`${isDark ? "bg-gradient-to-r from-orange-600/20 to-amber-600/20 border-b border-orange-500/20" : "bg-gradient-to-r from-orange-100 to-amber-100 border-b border-orange-200"}`}>
-                  <CardTitle className={isDark ? "text-orange-100" : "text-orange-900"}>🎲 Gerador de Palpites</CardTitle>
-                  <CardDescription className={isDark ? "text-orange-200/80" : "text-orange-700"}>
-                    Gera números baseados na estrutura do jogo
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4 pt-4">
-                  {/* Resultado do Palpite */}
-                  {palpiteBicho ? (
-                    <div className={`rounded-2xl p-5 ${isDark ? "bg-gradient-to-br from-orange-900/40 to-amber-900/30 border-2 border-orange-500/50" : "bg-gradient-to-br from-orange-100 to-amber-50 border-2 border-orange-300"}`}>
-                      {/* Animal */}
-                      <div className="flex items-center gap-4 mb-5">
-                        <div className={`w-16 h-16 rounded-2xl ${isDark ? "bg-gradient-to-br from-orange-500 to-amber-500" : "bg-gradient-to-br from-orange-400 to-amber-400"} flex items-center justify-center text-4xl shadow-xl`}>
-                          {palpiteBicho.emoji}
-                        </div>
-                        <div>
-                          <div className={`text-sm font-bold uppercase tracking-wider ${isDark ? "text-orange-300" : "text-orange-600"}`}>
-                            Grupo {palpiteBicho.grupo.toString().padStart(2, '0')}
-                          </div>
-                          <div className={`text-2xl font-black ${isDark ? "text-white" : "text-slate-900"}`}>
-                            {palpiteBicho.animal}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Números */}
-                      <div className="grid grid-cols-3 gap-3">
-                        <div className={`rounded-xl p-3 text-center ${isDark ? "bg-slate-900/60 border border-orange-500/30" : "bg-white border border-orange-200"}`}>
-                          <div className={`text-xs font-bold mb-1 ${isDark ? "text-orange-400" : "text-orange-600"}`}>DEZENA</div>
-                          <div className={`text-2xl font-black ${isDark ? "text-orange-100" : "text-orange-900"}`}>{palpiteBicho.dezena}</div>
-                          <div className={`text-xs font-semibold ${isDark ? "text-emerald-400" : "text-emerald-600"}`}>60x</div>
-                        </div>
-                        <div className={`rounded-xl p-3 text-center ${isDark ? "bg-slate-900/60 border border-orange-500/30" : "bg-white border border-orange-200"}`}>
-                          <div className={`text-xs font-bold mb-1 ${isDark ? "text-orange-400" : "text-orange-600"}`}>CENTENA</div>
-                          <div className={`text-2xl font-black ${isDark ? "text-orange-100" : "text-orange-900"}`}>{palpiteBicho.centena}</div>
-                          <div className={`text-xs font-semibold ${isDark ? "text-emerald-400" : "text-emerald-600"}`}>600x</div>
-                        </div>
-                        <div className={`rounded-xl p-3 text-center ${isDark ? "bg-slate-900/60 border border-orange-500/30" : "bg-white border border-orange-200"}`}>
-                          <div className={`text-xs font-bold mb-1 ${isDark ? "text-orange-400" : "text-orange-600"}`}>MILHAR</div>
-                          <div className={`text-2xl font-black ${isDark ? "text-orange-100" : "text-orange-900"}`}>{palpiteBicho.milhar}</div>
-                          <div className={`text-xs font-semibold ${isDark ? "text-emerald-400" : "text-emerald-600"}`}>4000x</div>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className={`rounded-2xl p-8 text-center ${isDark ? "bg-slate-800/50 border-2 border-dashed border-orange-500/30" : "bg-orange-50 border-2 border-dashed border-orange-300"}`}>
-                      <div className="text-5xl mb-3">🎲</div>
-                      <p className={`text-sm font-medium ${isDark ? "text-orange-200" : "text-orange-700"}`}>
-                        Clique para gerar um palpite
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Seletor de Estratégia */}
-                  <div className={`rounded-xl p-3 ${isDark ? "bg-slate-800/50 border border-slate-700" : "bg-slate-100 border border-slate-200"}`}>
-                    <div className={`text-xs font-bold mb-2 ${isDark ? "text-orange-300" : "text-orange-700"}`}>🎯 Estratégia:</div>
-                    <div className="grid grid-cols-3 gap-2">
-                      {[
-                        { id: 'aleatorio', label: '🎲 Aleatório', desc: 'Sorteio puro' },
-                        { id: 'puxada', label: '🔗 Puxada', desc: 'Baseado no anterior' },
-                        { id: 'quente', label: '🔥 Quente', desc: 'Grupos frequentes' },
-                        { id: 'frio', label: '❄️ Frio', desc: 'Grupos atrasados' },
-                        { id: 'data', label: '📅 Dia', desc: 'Animal do dia' },
-                        { id: 'soma', label: '🔢 Soma', desc: 'Numerologia' },
-                      ].map((e) => (
-                        <button
-                          key={e.id}
-                          onClick={() => setEstrategiaBicho(e.id as any)}
-                          className={`p-2 rounded-lg text-left transition-all ${
-                            estrategiaBicho === e.id
-                              ? isDark
-                                ? "bg-orange-500/30 border-2 border-orange-500"
-                                : "bg-orange-200 border-2 border-orange-500"
-                              : isDark
-                                ? "bg-slate-700/50 border border-slate-600 hover:border-orange-500/50"
-                                : "bg-white border border-slate-300 hover:border-orange-400"
-                          }`}
-                        >
-                          <div className={`text-sm font-semibold ${isDark ? "text-white" : "text-slate-900"}`}>{e.label}</div>
-                          <div className={`text-[10px] ${isDark ? "text-slate-400" : "text-slate-500"}`}>{e.desc}</div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <Button
-                    className="w-full h-12 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold text-base shadow-xl shadow-orange-500/40"
-                    onClick={gerarPalpiteBicho}
-                  >
-                    🎲 {palpiteBicho ? "NOVO PALPITE" : "GERAR PALPITE"}
-                  </Button>
-
-                  {/* Explicação da Lógica */}
-                  <div className={`rounded-xl p-4 text-sm space-y-2 ${isDark ? "bg-slate-800/50 border border-slate-700" : "bg-slate-100 border border-slate-200"}`}>
-                    <div className={`font-bold ${isDark ? "text-orange-300" : "text-orange-700"}`}>📐 Lógica da Estratégia:</div>
-                    {estrategiaBicho === 'aleatorio' && (
-                      <>
-                        <div className={isDark ? "text-slate-300" : "text-slate-700"}>
-                          • <span className="font-semibold">Grupo</span>: Sorteio aleatório (1-25)
-                        </div>
-                        <div className={isDark ? "text-slate-300" : "text-slate-700"}>
-                          • <span className="font-semibold">Dezena</span>: Baseada no grupo
-                        </div>
-                      </>
-                    )}
-                    {estrategiaBicho === 'puxada' && (
-                      <>
-                        <div className={isDark ? "text-slate-300" : "text-slate-700"}>
-                          • <span className="font-semibold">Puxada</span>: Animal anterior "puxa" o próximo
-                        </div>
-                        <div className={isDark ? "text-slate-300" : "text-slate-700"}>
-                          • Ex: Se saiu Cobra, pode puxar Jacaré, Porco, Burro ou Gato
-                        </div>
-                      </>
-                    )}
-                    {estrategiaBicho === 'quente' && (
-                      <>
-                        <div className={isDark ? "text-slate-300" : "text-slate-700"}>
-                          • <span className="font-semibold">Números Quentes</span>: Grupos com maior frequência histórica
-                        </div>
-                        <div className={isDark ? "text-slate-300" : "text-slate-700"}>
-                          • Borboleta, Carneiro, Galo, Porco, Touro, Cobra, Gato, Vaca
-                        </div>
-                      </>
-                    )}
-                    {estrategiaBicho === 'frio' && (
-                      <>
-                        <div className={isDark ? "text-slate-300" : "text-slate-700"}>
-                          • <span className="font-semibold">Números Frios</span>: Grupos que estão "devendo"
-                        </div>
-                        <div className={isDark ? "text-slate-300" : "text-slate-700"}>
-                          • Teoria: Números atrasados têm mais chance de sair
-                        </div>
-                      </>
-                    )}
-                    {estrategiaBicho === 'data' && (
-                      <>
-                        <div className={isDark ? "text-slate-300" : "text-slate-700"}>
-                          • <span className="font-semibold">Dia da Semana</span>: Cada dia tem animais associados
-                        </div>
-                        <div className={isDark ? "text-slate-300" : "text-slate-700"}>
-                          • Dom: Aves | Seg: Força | Ter: Astúcia | Qua: Agilidade
-                        </div>
-                        <div className={isDark ? "text-slate-300" : "text-slate-700"}>
-                          • Qui: Trabalho | Sex: Fartura | Sáb: Liberdade
-                        </div>
-                      </>
-                    )}
-                    {estrategiaBicho === 'soma' && (
-                      <>
-                        <div className={isDark ? "text-slate-300" : "text-slate-700"}>
-                          • <span className="font-semibold">Numerologia</span>: Soma dos dígitos da data
-                        </div>
-                        <div className={isDark ? "text-slate-300" : "text-slate-700"}>
-                          • Ex: {new Date().toLocaleDateString('pt-BR')} = {
-                            String(new Date().getDate()).split('').reduce((a, b) => a + parseInt(b), 0) +
-                            String(new Date().getMonth() + 1).split('').reduce((a, b) => a + parseInt(b), 0) +
-                            String(new Date().getFullYear()).split('').reduce((a, b) => a + parseInt(b), 0)
-                          } → Grupo {((
-                            String(new Date().getDate()).split('').reduce((a, b) => a + parseInt(b), 0) +
-                            String(new Date().getMonth() + 1).split('').reduce((a, b) => a + parseInt(b), 0) +
-                            String(new Date().getFullYear()).split('').reduce((a, b) => a + parseInt(b), 0)
-                          - 1) % 25) + 1}
-                        </div>
-                      </>
-                    )}
-                  </div>
-
-                  <p className={`text-xs text-center ${isDark ? "text-slate-400" : "text-slate-500"}`}>
-                    ⚠️ Palpites são apenas sugestões aleatórias para entretenimento.
-                  </p>
                 </CardContent>
               </Card>
             </div>

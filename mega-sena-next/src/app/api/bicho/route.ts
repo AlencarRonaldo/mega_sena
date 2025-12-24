@@ -21,8 +21,18 @@ const ANIMAIS = [
   'Touro', 'Tigre', 'Urso', 'Veado', 'Vaca'
 ]
 
+const HORARIOS: Record<string, string> = {
+  'PPT': '09:20',
+  'PTM': '11:20',
+  'PT': '14:20',
+  'PTV': '16:20',
+  'PTN': '18:20',
+  'COR': '21:20',
+  'FED': '19:00'
+}
+
 function getGrupoFromDezena(dezena: number): number {
-  if (dezena === 0) return 25
+  if (dezena === 0) return 25 // 00 = Vaca (grupo 25)
   return Math.ceil(dezena / 4)
 }
 
@@ -30,164 +40,174 @@ function getAnimalFromGrupo(grupo: number): string {
   return ANIMAIS[grupo] || 'Desconhecido'
 }
 
+// Extrai grupo do formato "milhar-grupo" (ex: "9009-78" ou "778-20")
+function parseResultado(texto: string): { milhar: string, grupo: number } | null {
+  // Formato: XXXX-GG (milhar-grupo)
+  const match = texto.match(/(\d{4})-(\d{1,2})/)
+  if (match) {
+    return {
+      milhar: match[1],
+      grupo: parseInt(match[2])
+    }
+  }
+
+  // Formato: XXX-GG (centena-grupo)
+  const matchCentena = texto.match(/(\d{3})-(\d{1,2})/)
+  if (matchCentena) {
+    return {
+      milhar: '0' + matchCentena[1],
+      grupo: parseInt(matchCentena[2])
+    }
+  }
+
+  return null
+}
+
 export async function GET() {
   try {
-    // Tentar buscar de múltiplas fontes
-    const sources = [
-      'https://www.ojogodobicho.com/deu_no_poste.htm',
-      'https://www.eojogodobicho.com/deu-no-poste.html'
-    ]
+    // Buscar do site
+    const response = await fetch('https://www.ojogodobicho.com/deu_no_poste.htm', {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Cache-Control': 'no-cache',
+      },
+      cache: 'no-store'
+    })
 
-    let html = ''
-    let sourceUsed = ''
-
-    for (const source of sources) {
-      try {
-        const response = await fetch(source, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
-          },
-          next: { revalidate: 300 } // Cache por 5 minutos
-        })
-
-        if (response.ok) {
-          html = await response.text()
-          sourceUsed = source
-          break
-        }
-      } catch {
-        continue
-      }
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
     }
 
-    if (!html) {
-      return NextResponse.json({
-        success: false,
-        error: 'Não foi possível buscar resultados',
-        message: 'Tente novamente mais tarde',
-        resultados: []
-      }, { status: 503 })
-    }
-
+    const html = await response.text()
     const $ = cheerio.load(html)
     const resultados: ResultadoBicho[] = []
 
-    // Parsing para ojogodobicho.com
-    if (sourceUsed.includes('ojogodobicho')) {
-      // Buscar tabelas de resultados
-      $('table').each((_, table) => {
-        const $table = $(table)
-        const headerText = $table.find('th, td').first().text().trim()
+    // Buscar a tabela principal de resultados
+    // O site geralmente tem uma tabela com colunas: Pos, PPT, PTM, PT, PTV, PTN, COR
 
-        // Identificar extrações (PTM, PT, PTV, PTN, COR, etc.)
-        const extracaoMatch = headerText.match(/(PTM|PT|PTV|PTN|PPT|COR|FED)/i)
-        if (!extracaoMatch) return
+    const extracoes = ['PPT', 'PTM', 'PT', 'PTV', 'PTN', 'COR']
+    const resultadosPorExtracao: Record<string, ResultadoBicho['premios']> = {}
 
-        const extracao = extracaoMatch[1].toUpperCase()
-        const premios: ResultadoBicho['premios'] = []
+    // Inicializar
+    extracoes.forEach(ext => {
+      resultadosPorExtracao[ext] = []
+    })
 
-        // Buscar milhares na tabela
-        $table.find('tr').each((rowIndex, row) => {
-          const cells = $(row).find('td')
-          if (cells.length >= 2) {
-            const posicaoText = $(cells[0]).text().trim()
-            const milharText = $(cells[1]).text().trim()
+    // Buscar tabelas
+    $('table').each((_, table) => {
+      const $table = $(table)
+      const headers: string[] = []
 
-            const posicao = parseInt(posicaoText.replace(/[^\d]/g, ''))
-            const milhar = milharText.replace(/[^\d]/g, '').padStart(4, '0')
+      // Pegar cabeçalhos
+      $table.find('tr').first().find('th, td').each((_, cell) => {
+        headers.push($(cell).text().trim().toUpperCase())
+      })
 
-            if (posicao >= 1 && posicao <= 7 && milhar.length === 4) {
-              const dezena = parseInt(milhar.slice(-2))
-              const grupo = getGrupoFromDezena(dezena)
-              premios.push({
-                posicao,
-                milhar,
-                grupo,
-                animal: getAnimalFromGrupo(grupo)
-              })
-            }
+      // Verificar se é a tabela de resultados (tem as colunas das extrações)
+      const hasExtracoes = extracoes.some(ext => headers.includes(ext))
+      if (!hasExtracoes) return
+
+      // Encontrar índice de cada extração
+      const extracaoIndices: Record<string, number> = {}
+      extracoes.forEach(ext => {
+        const idx = headers.findIndex(h => h === ext)
+        if (idx >= 0) extracaoIndices[ext] = idx
+      })
+
+      // Processar linhas de dados (1º ao 7º)
+      $table.find('tr').slice(1).each((rowIdx, row) => {
+        const cells = $(row).find('td')
+        const posicaoText = $(cells[0]).text().trim()
+        const posicao = parseInt(posicaoText.replace(/[^\d]/g, ''))
+
+        if (posicao < 1 || posicao > 7) return
+
+        // Para cada extração, pegar o valor da coluna correspondente
+        Object.entries(extracaoIndices).forEach(([ext, colIdx]) => {
+          const cellText = $(cells[colIdx]).text().trim()
+
+          // Ignorar se for 0000-0 ou vazio
+          if (!cellText || cellText.includes('0000-0') || cellText === '0000' || cellText === '0') {
+            return
+          }
+
+          const resultado = parseResultado(cellText)
+          if (resultado && resultado.grupo >= 1 && resultado.grupo <= 25) {
+            resultadosPorExtracao[ext].push({
+              posicao,
+              milhar: resultado.milhar,
+              grupo: resultado.grupo,
+              animal: getAnimalFromGrupo(resultado.grupo)
+            })
           }
         })
+      })
+    })
 
-        if (premios.length > 0) {
+    // Montar resultados finais (apenas extrações com dados válidos)
+    extracoes.forEach(ext => {
+      const premios = resultadosPorExtracao[ext]
+      if (premios.length > 0) {
+        // Verificar se não são todos 0000
+        const temDadosValidos = premios.some(p => p.milhar !== '0000')
+        if (temDadosValidos) {
           resultados.push({
-            extracao,
-            horario: getHorarioExtracao(extracao),
+            extracao: ext,
+            horario: HORARIOS[ext] || '--:--',
             data: new Date().toLocaleDateString('pt-BR'),
             premios: premios.sort((a, b) => a.posicao - b.posicao)
           })
         }
-      })
+      }
+    })
 
-      // Fallback: buscar padrão de números diretamente
-      if (resultados.length === 0) {
-        const textContent = $('body').text()
+    // Se não encontrou na tabela, tentar parsing alternativo
+    if (resultados.length === 0) {
+      const bodyText = $('body').text()
 
-        // Regex para encontrar padrões de resultados
-        const extracoes = ['PPT', 'PTM', 'PT', 'PTV', 'PTN', 'COR']
+      // Tentar encontrar padrões de milhares com grupos
+      extracoes.forEach(ext => {
+        // Buscar seção da extração
+        const regex = new RegExp(`${ext}[\\s\\S]*?(\\d{4}-\\d{1,2})[\\s\\S]*?(\\d{4}-\\d{1,2})[\\s\\S]*?(\\d{4}-\\d{1,2})[\\s\\S]*?(\\d{4}-\\d{1,2})[\\s\\S]*?(\\d{4}-\\d{1,2})`, 'i')
+        const match = bodyText.match(regex)
 
-        for (const ext of extracoes) {
-          const regex = new RegExp(`${ext}[^\\d]*(\\d{4})[^\\d]*(\\d{4})[^\\d]*(\\d{4})[^\\d]*(\\d{4})[^\\d]*(\\d{4})`, 'i')
-          const match = textContent.match(regex)
-
-          if (match) {
-            const premios: ResultadoBicho['premios'] = []
-            for (let i = 1; i <= 5; i++) {
-              const milhar = match[i].padStart(4, '0')
-              const dezena = parseInt(milhar.slice(-2))
-              const grupo = getGrupoFromDezena(dezena)
+        if (match) {
+          const premios: ResultadoBicho['premios'] = []
+          for (let i = 1; i <= 5; i++) {
+            const resultado = parseResultado(match[i])
+            if (resultado && resultado.grupo >= 1 && resultado.grupo <= 25 && resultado.milhar !== '0000') {
               premios.push({
                 posicao: i,
-                milhar,
-                grupo,
-                animal: getAnimalFromGrupo(grupo)
+                milhar: resultado.milhar,
+                grupo: resultado.grupo,
+                animal: getAnimalFromGrupo(resultado.grupo)
               })
             }
+          }
+
+          if (premios.length > 0) {
             resultados.push({
               extracao: ext,
-              horario: getHorarioExtracao(ext),
+              horario: HORARIOS[ext] || '--:--',
               data: new Date().toLocaleDateString('pt-BR'),
               premios
             })
           }
         }
-      }
+      })
     }
 
-    // Se ainda não conseguiu, tentar parsing genérico
-    if (resultados.length === 0) {
-      // Buscar qualquer sequência de 5 números de 4 dígitos
-      const allText = $('body').text()
-      const milharPattern = /\b(\d{4})\b/g
-      const milhares = [...allText.matchAll(milharPattern)].map(m => m[1])
-
-      if (milhares.length >= 5) {
-        const premios: ResultadoBicho['premios'] = []
-        for (let i = 0; i < Math.min(5, milhares.length); i++) {
-          const milhar = milhares[i]
-          const dezena = parseInt(milhar.slice(-2))
-          const grupo = getGrupoFromDezena(dezena)
-          premios.push({
-            posicao: i + 1,
-            milhar,
-            grupo,
-            animal: getAnimalFromGrupo(grupo)
-          })
-        }
-        resultados.push({
-          extracao: 'Último',
-          horario: '--:--',
-          data: new Date().toLocaleDateString('pt-BR'),
-          premios
-        })
-      }
-    }
+    // Ordenar por horário (mais recente primeiro)
+    const ordemExtracoes = ['COR', 'PTN', 'PTV', 'PT', 'PTM', 'PPT']
+    resultados.sort((a, b) => {
+      return ordemExtracoes.indexOf(a.extracao) - ordemExtracoes.indexOf(b.extracao)
+    })
 
     return NextResponse.json({
       success: true,
-      fonte: sourceUsed,
+      fonte: 'ojogodobicho.com',
       atualizadoEm: new Date().toISOString(),
       resultados
     })
@@ -196,22 +216,9 @@ export async function GET() {
     console.error('Erro ao buscar resultados:', error)
     return NextResponse.json({
       success: false,
-      error: 'Erro interno',
+      error: 'Erro ao buscar resultados',
       message: error instanceof Error ? error.message : 'Erro desconhecido',
       resultados: []
     }, { status: 500 })
   }
-}
-
-function getHorarioExtracao(extracao: string): string {
-  const horarios: Record<string, string> = {
-    'PPT': '09:30',
-    'PTM': '11:30',
-    'PT': '14:30',
-    'PTV': '16:30',
-    'PTN': '18:30',
-    'COR': '21:30',
-    'FED': '19:00'
-  }
-  return horarios[extracao.toUpperCase()] || '--:--'
 }
